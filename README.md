@@ -1,6 +1,6 @@
 # FHIRLightPatientLoader v0.0.1
-NOTE - THIS IS A WIP, FUNCTIONALITY MAY (AND SHOULD) CHANGE RAPIDLY 
-A JavaScript library for loading and processing FHIR R5 patient data bundles, designed to work with D3.js for data visualization.
+THE FEATURES EXPECTED WILL KEEP CHANGING RAPIDLY FOR THE CURRENT WEEK
+A lightweight JavaScript library for loading and processing FHIR R5 patient data bundles, designed to work with D3.js for data visualization.
 
 ## Features
 
@@ -10,8 +10,7 @@ A JavaScript library for loading and processing FHIR R5 patient data bundles, de
 - Prepare data for visualization with D3.js
 - Handle provenance information
 - Support for both browser and Node.js environments
-- Comprehensive error handling
-- Example showcase with interactive demos
+- Basic error handling
 
 ## Installation
 
@@ -21,7 +20,7 @@ Include the library in your HTML file:
 
 ```html
 <script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="FHIRPatientLoader.js"></script>
+<script src="FHIRLightPatientLoader.js"></script>
 ```
 
 ## Usage
@@ -30,10 +29,10 @@ Include the library in your HTML file:
 
 ```javascript
 // Load a single patient
-const patient = await FHIRPatientLoader.loadPatient('path/to/patient.json');
+const patient = await FHIRLightPatientLoader.loadPatient('path/to/patient.json');
 
 // Load multiple patients
-const patients = await FHIRPatientLoader.loadPatients('path/to/patients/directory');
+const patients = await FHIRLightPatientLoader.loadPatients('path/to/patients/directory');
 ```
 
 ### Working with Patient Data
@@ -48,7 +47,6 @@ const age = patient.getAge();
 // Get vital signs
 const vitals = patient.getVitals();
 const bloodPressureTrend = patient.getVitalSignTrend('blood-pressure');
-const latestVitals = patient.getLatestVitalSigns();
 
 // Get lab results
 const labResults = patient.getLabResults();
@@ -78,7 +76,6 @@ const carePlanDetails = patient.getCarePlanDetails(carePlanId);
 // Calculate medical metrics
 const bmi = patient.calculateBMI();
 const egfr = patient.calculateEGFR();
-const bmiPercentile = patient.getBMIPercentile();
 ```
 
 ### Visualization Data Preparation
@@ -107,17 +104,9 @@ const relatedResources = patient.getRelatedResources('observation-123', 'author'
 const timeline = patient.getResourceTimeline(resourceId);
 ```
 
-## Example Showcase
-
-The library includes a comprehensive example showcase demonstrating all major features. To view it:
-
-1. Open `examples/function-showcase.html` in your browser
-2. Load a patient data file
-3. Explore the various features through the interactive interface
-
 ## API Reference
 
-### FHIRPatientLoader
+### FHIRLightPatientLoader
 
 #### Methods
 
@@ -155,7 +144,6 @@ The library includes a comprehensive example showcase demonstrating all major fe
 - `getAge()`: Calculates patient's age
 - `getVitals()`: Returns all vital sign observations
 - `getVitalSignTrend(vitalType)`: Returns trend data for a specific vital sign
-- `getLatestVitalSigns()`: Returns the most recent vital sign measurements
 - `getLabResults()`: Returns all laboratory observations
 - `getLabResultsChart()`: Prepares lab results data for visualization
 - `getActiveMedications()`: Returns currently active medications
@@ -169,19 +157,16 @@ The library includes a comprehensive example showcase demonstrating all major fe
 - `getCarePlanDetails(carePlanId)`: Returns detailed information about a care plan
 - `calculateBMI()`: Calculates Body Mass Index
 - `calculateEGFR()`: Calculates estimated Glomerular Filtration Rate
-- `getBMIPercentile()`: Calculates BMI percentile
 - `getProvenanceForResource(resourceId)`: Returns provenance information for a resource
 - `getResourceTimeline(resourceId)`: Returns timeline of related resources
-- `getResourceReferences(resourceId)`: Returns references to related resources
+- `getRelatedResources(resourceId, relationshipType)`: Returns related resources
 
 ## Error Handling
 
-The library includes comprehensive error handling for:
+The library includes basic error handling for:
 - Invalid file paths
 - Malformed JSON
 - Missing resources
-- Invalid dates and values
-- Calculation errors
 
 ## Contributing
 
