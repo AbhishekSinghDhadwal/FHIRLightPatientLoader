@@ -19,8 +19,7 @@ A lightweight JavaScript library for loading and processing FHIR R5 patient data
 Include the library in your HTML file:
 
 ```html
-<script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="FHIRLightPatientLoader.js"></script>
+<script src="https://abhisheksinghdhadwal.github.io/FHIRLightPatientLoader/FHIRLightPatientLoader.js"></script>
 ```
 
 ## Usage
