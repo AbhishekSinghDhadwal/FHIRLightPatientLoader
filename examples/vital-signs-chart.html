@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FHIR Patient Vital Signs</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="../FHIRLightPatientLoader.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .chart-container {
+            width: 800px;
+            height: 400px;
+            margin: 20px 0;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        select, button {
+            margin-right: 10px;
+            padding: 5px;
+        }
+        .legend {
+            margin-top: 20px;
+        }
+        .legend-item {
+            display: inline-block;
+            margin-right: 20px;
+        }
+        .legend-color {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        .tooltip {
+            position: absolute;
+            background: white;
+            padding: 5px;
+            border: 1px solid black;
+            border-radius: 5px;
+            pointer-events: none;
+        }
+        .line {
+            fill: none;
+            stroke-width: 2px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Vital Signs Chart</h1>
+    <div class="controls">
+        <select id="vitalSign">
+            <option value="body-temperature">Body Temperature</option>
+            <option value="heart-rate">Heart Rate</option>
+            <option value="respiratory-rate">Respiratory Rate</option>
+            <option value="blood-pressure">Blood Pressure</option>
+            <option value="body-height">Height</option>
+            <option value="body-weight">Weight</option>
+            <option value="bmi">BMI</option>
+        </select>
+        <select id="timeRange">
+            <option value="all">All Time</option>
+            <option value="1y">Last Year</option>
+            <option value="6m">Last 6 Months</option>
+            <option value="3m">Last 3 Months</option>
+            <option value="1m">Last Month</option>
+            <option value="1w">Last Week</option>
+        </select>
+        <button id="updateChart">Update Chart</button>
+    </div>
+    <div id="chart" class="chart-container"></div>
+    <div class="legend">
+        <div class="legend-item">
+            <span class="legend-color" style="background-color: #2196F3;"></span>
+            <span>Value</span>
+        </div>
+    </div>
+
+    <script>
+        let patient;
+        let currentChart;
+
+        async function loadPatientData() {
+            try {
+                patient = await FHIRPatientLoader.loadPatient('../sample_patient/Aaron697_Labadie908_aaa9f0de-a3eb-e820-f39c-e961faa40dfa.json');
+                updateChart();
+            } catch (error) {
+                console.error('Error loading patient data:', error);
+                alert('Error loading patient data. Please check the console for details.');
+            }
+        }
+
+        function updateChart() {
+            if (!patient) return;
+
+            const vitalSign = document.getElementById('vitalSign').value;
+            const timeRange = document.getElementById('timeRange').value;
+            console.log('Selected vital sign:', vitalSign);
+            console.log('Selected time range:', timeRange);
+            
+            // Get all vital signs and filter by type
+            const allVitals = patient.getVitals();
+            console.log('All vital signs:', allVitals);
+            
+            // Debug: Log the structure of each vital sign
+            allVitals.forEach((vital, index) => {
+                console.log(`Vital sign ${index}:`, {
+                    code: vital.code,
+                    category: vital.category,
+                    value: vital.valueQuantity,
+                    effectiveDateTime: vital.effectiveDateTime
+                });
+            });
+            
+            // Filter by vital sign type using both code.text and code.coding[].display
+            const filteredVitals = allVitals.filter(vital => {
+                const codeText = vital.code?.text?.toLowerCase() || '';
+                const codeDisplay = vital.code?.coding?.[0]?.display?.toLowerCase() || '';
+                const codeCode = vital.code?.coding?.[0]?.code || '';
+                const searchTerm = vitalSign.toLowerCase().replace(/-/g, ' ');
+                
+                // Special handling for body temperature
+                if (vitalSign === 'body-temperature') {
+                    const isTemperature = 
+                        codeCode === '8310-5' || // LOINC code for body temperature
+                        codeText.toLowerCase().includes('temperature') ||
+                        codeText.toLowerCase().includes('temp') ||
+                        codeDisplay.toLowerCase().includes('temperature') ||
+                        codeDisplay.toLowerCase().includes('temp');
+                    
+                    console.log('Temperature check:', {
+                        codeText,
+                        codeDisplay,
+                        codeCode,
+                        isTemperature
+                    });
+                    
+                    return isTemperature;
+                }
+                
+                // For other vital signs
+                console.log('Checking vital sign:', {
+                    codeText,
+                    codeDisplay,
+                    codeCode,
+                    searchTerm,
+                    matches: codeText.includes(searchTerm) || codeDisplay.includes(searchTerm)
+                });
+
+                // Special handling for BMI
+                if (vitalSign === 'bmi') {
+                    const isBMI = 
+                        codeCode === '39156-5' || // BMI ratio
+                        codeCode === '59576-9' || // BMI percentile
+                        codeText.toLowerCase().includes('bmi') ||
+                        codeText.toLowerCase().includes('body mass index') ||
+                        codeDisplay.toLowerCase().includes('bmi') ||
+                        codeDisplay.toLowerCase().includes('body mass index');
+                    
+                    console.log('BMI check:', {
+                        codeText,
+                        codeDisplay,
+                        codeCode,
+                        isBMI
+                    });
+                    
+                    return isBMI;
+                }
+                
+                return codeText.includes(searchTerm) || codeDisplay.includes(searchTerm);
+            });
+            console.log('Filtered vital signs:', filteredVitals);
+
+            // Convert to chart data format
+            const data = filteredVitals
+                .map(vital => {
+                    if (vitalSign === 'blood-pressure') {
+                        // Handle blood pressure panel
+                        const systolic = vital.component?.find(c => 
+                            c.code?.coding?.[0]?.code === '8480-6' || 
+                            c.code?.text?.toLowerCase().includes('systolic')
+                        );
+                        const diastolic = vital.component?.find(c => 
+                            c.code?.coding?.[0]?.code === '8462-4' || 
+                            c.code?.text?.toLowerCase().includes('diastolic')
+                        );
+                        
+                        return {
+                            date: new Date(vital.effectiveDateTime),
+                            systolic: systolic?.valueQuantity?.value,
+                            diastolic: diastolic?.valueQuantity?.value,
+                            unit: systolic?.valueQuantity?.unit || diastolic?.valueQuantity?.unit,
+                            display: vital.code?.coding?.[0]?.display || vital.code?.text
+                        };
+                    } else {
+                        // Handle other vital signs
+                        return {
+                            date: new Date(vital.effectiveDateTime),
+                            value: vital.valueQuantity?.value,
+                            unit: vital.valueQuantity?.unit,
+                            display: vital.code?.coding?.[0]?.display || vital.code?.text
+                        };
+                    }
+                })
+                .sort((a, b) => a.date - b.date);
+
+            // Apply time range filter
+            if (timeRange !== 'all') {
+                const now = new Date();
+                let cutoff;
+                switch(timeRange) {
+                    case '1y': cutoff = new Date(now - 365 * 24 * 60 * 60 * 1000); break;
+                    case '6m': cutoff = new Date(now - 180 * 24 * 60 * 60 * 1000); break;
+                    case '3m': cutoff = new Date(now - 90 * 24 * 60 * 60 * 1000); break;
+                    case '1m': cutoff = new Date(now - 30 * 24 * 60 * 60 * 1000); break;
+                    case '1w': cutoff = new Date(now - 7 * 24 * 60 * 60 * 1000); break;
+                }
+                data = data.filter(d => d.date >= cutoff);
+            }
+
+            console.log('Processed chart data:', data);
+
+            if (!data || data.length === 0) {
+                console.warn('No data available for the selected vital sign');
+                // Clear previous chart
+                d3.select('#chart').selectAll('*').remove();
+                
+                // Add a message to the chart container
+                d3.select('#chart')
+                    .append('div')
+                    .style('text-align', 'center')
+                    .style('padding-top', '180px')
+                    .style('font-size', '16px')
+                    .style('color', '#666')
+                    .text(`No ${vitalSign.replace(/-/g, ' ')} measurements found in the patient's data`);
+                return;
+            }
+
+            // Validate data structure
+            console.log('First data point:', data[0]);
+            console.log('Data points count:', data.length);
+            console.log('Date range:', {
+                min: d3.min(data, d => d.date),
+                max: d3.max(data, d => d.date)
+            });
+            console.log('Value range:', {
+                min: d3.min(data, d => d.value),
+                max: d3.max(data, d => d.value)
+            });
+
+            // Clear previous chart
+            d3.select('#chart').selectAll('*').remove();
+
+            // Set up dimensions
+            const margin = { top: 20, right: 30, bottom: 30, left: 50 };
+            const width = 800 - margin.left - margin.right;
+            const height = 400 - margin.top - margin.bottom;
+
+            // Create SVG
+            const svg = d3.select('#chart')
+                .append('svg')
+                .attr('width', width + margin.left + margin.right)
+                .attr('height', height + margin.top + margin.bottom)
+                .append('g')
+                .attr('transform', `translate(${margin.left},${margin.top})`);
+
+            // Create scales
+            const x = d3.scaleTime()
+                .domain(d3.extent(data, d => d.date))
+                .range([0, width])
+                .nice();
+
+            const y = d3.scaleLinear()
+                .domain([
+                    0,
+                    vitalSign === 'blood-pressure' 
+                        ? Math.max(d3.max(data, d => d.systolic), d3.max(data, d => d.diastolic)) * 1.1
+                        : d3.max(data, d => d.value) * 1.1
+                ])
+                .range([height, 0])
+                .nice();
+
+            // Add X axis with formatted dates
+            svg.append('g')
+                .attr('transform', `translate(0,${height})`)
+                .call(d3.axisBottom(x)
+                    .ticks(d3.timeMonth.every(1))
+                    .tickFormat(d3.timeFormat('%b %Y')));
+
+            // Add Y axis
+            svg.append('g')
+                .call(d3.axisLeft(y));
+
+            if (vitalSign === 'blood-pressure') {
+                // Add systolic line
+                const systolicLine = d3.line()
+                    .x(d => x(d.date))
+                    .y(d => y(d.systolic))
+                    .curve(d3.curveMonotoneX);
+
+                svg.append('path')
+                    .datum(data)
+                    .attr('class', 'line')
+                    .attr('d', systolicLine)
+                    .attr('stroke', '#2196F3');
+
+                // Add diastolic line
+                const diastolicLine = d3.line()
+                    .x(d => x(d.date))
+                    .y(d => y(d.diastolic))
+                    .curve(d3.curveMonotoneX);
+
+                svg.append('path')
+                    .datum(data)
+                    .attr('class', 'line')
+                    .attr('d', diastolicLine)
+                    .attr('stroke', '#FF5722');
+
+                // Add dots for systolic
+                svg.selectAll('.systolic-dot')
+                    .data(data)
+                    .enter()
+                    .append('circle')
+                    .attr('class', 'systolic-dot')
+                    .attr('cx', d => x(d.date))
+                    .attr('cy', d => y(d.systolic))
+                    .attr('r', 4)
+                    .attr('fill', '#2196F3')
+                    .on('mouseover', function(event, d) {
+                        d3.select(this)
+                            .attr('r', 6);
+                        
+                        const tooltip = d3.select('body')
+                            .append('div')
+                            .attr('class', 'tooltip')
+                            .style('position', 'absolute')
+                            .style('background', 'white')
+                            .style('padding', '5px')
+                            .style('border', '1px solid black')
+                            .style('border-radius', '5px');
+                        
+                        tooltip.html(`
+                            Date: ${d.date.toLocaleDateString()}<br>
+                            Systolic: ${d.systolic} ${d.unit || ''}<br>
+                            Diastolic: ${d.diastolic} ${d.unit || ''}
+                        `);
+                    })
+                    .on('mousemove', function(event) {
+                        d3.select('.tooltip')
+                            .style('left', (event.pageX + 10) + 'px')
+                            .style('top', (event.pageY - 10) + 'px');
+                    })
+                    .on('mouseout', function() {
+                        d3.select(this)
+                            .attr('r', 4);
+                        
+                        d3.select('.tooltip').remove();
+                    });
+
+                // Add dots for diastolic
+                svg.selectAll('.diastolic-dot')
+                    .data(data)
+                    .enter()
+                    .append('circle')
+                    .attr('class', 'diastolic-dot')
+                    .attr('cx', d => x(d.date))
+                    .attr('cy', d => y(d.diastolic))
+                    .attr('r', 4)
+                    .attr('fill', '#FF5722')
+                    .on('mouseover', function(event, d) {
+                        d3.select(this)
+                            .attr('r', 6);
+                    })
+                    .on('mouseout', function() {
+                        d3.select(this)
+                            .attr('r', 4);
+                    });
+
+                // Update legend
+                d3.select('.legend').html(`
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #2196F3;"></span>
+                        <span>Systolic</span>
+                    </div>
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #FF5722;"></span>
+                        <span>Diastolic</span>
+                    </div>
+                `);
+            } else {
+                // Add line for other vital signs
+                const line = d3.line()
+                    .x(d => x(d.date))
+                    .y(d => y(d.value))
+                    .curve(d3.curveMonotoneX);
+
+                svg.append('path')
+                    .datum(data)
+                    .attr('class', 'line')
+                    .attr('d', line)
+                    .attr('stroke', '#2196F3');
+
+                // Add dots
+                svg.selectAll('circle')
+                    .data(data)
+                    .enter()
+                    .append('circle')
+                    .attr('cx', d => x(d.date))
+                    .attr('cy', d => y(d.value))
+                    .attr('r', 4)
+                    .attr('fill', '#2196F3')
+                    .on('mouseover', function(event, d) {
+                        d3.select(this)
+                            .attr('r', 6);
+                        
+                        const tooltip = d3.select('body')
+                            .append('div')
+                            .attr('class', 'tooltip')
+                            .style('position', 'absolute')
+                            .style('background', 'white')
+                            .style('padding', '5px')
+                            .style('border', '1px solid black')
+                            .style('border-radius', '5px');
+                        
+                        tooltip.html(`
+                            Date: ${d.date.toLocaleDateString()}<br>
+                            Value: ${d.value} ${d.unit || ''}<br>
+                            Type: ${d.display}
+                        `);
+                    })
+                    .on('mousemove', function(event) {
+                        d3.select('.tooltip')
+                            .style('left', (event.pageX + 10) + 'px')
+                            .style('top', (event.pageY - 10) + 'px');
+                    })
+                    .on('mouseout', function() {
+                        d3.select(this)
+                            .attr('r', 4);
+                        
+                        d3.select('.tooltip').remove();
+                    });
+
+                // Update legend
+                d3.select('.legend').html(`
+                    <div class="legend-item">
+                        <span class="legend-color" style="background-color: #2196F3;"></span>
+                        <span>Value</span>
+                    </div>
+                `);
+            }
+
+            // Add title
+            svg.append('text')
+                .attr('x', width / 2)
+                .attr('y', 0 - (margin.top / 2))
+                .attr('text-anchor', 'middle')
+                .style('font-size', '16px')
+                .text(vitalSign.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()));
+
+            // Add Y axis label
+            svg.append('text')
+                .attr('transform', 'rotate(-90)')
+                .attr('y', 0 - margin.left)
+                .attr('x', 0 - (height / 2))
+                .attr('dy', '1em')
+                .style('text-anchor', 'middle')
+                .text(vitalSign === 'blood-pressure' ? 'mmHg' : 'Value');
+        }
+
+        // Event listeners
+        document.getElementById('updateChart').addEventListener('click', updateChart);
+        document.getElementById('vitalSign').addEventListener('change', updateChart);
+        document.getElementById('timeRange').addEventListener('change', updateChart);
+
+        // Load patient data when page loads
+        loadPatientData();
+    </script>
+</body>
+</html> 

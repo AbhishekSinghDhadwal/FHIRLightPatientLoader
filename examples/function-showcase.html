@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FHIR Patient Loader Function Showcase</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="../FHIRLightPatientLoader.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .section h2 {
+            margin-top: 0;
+            color: #2c3e50;
+        }
+        .output {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .error {
+            color: #dc3545;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>FHIR Patient Loader Function Showcase</h1>
+    
+    <div class="section">
+        <h2>Patient Loading</h2>
+        <button onclick="loadPatientData()">Load Patient Data</button>
+        <div id="patientLoadOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Basic Patient Information</h2>
+        <button onclick="showPatientInfo()">Show Patient Info</button>
+        <div id="patientInfoOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Vital Signs</h2>
+        <button onclick="showVitalSigns()">Show Vital Signs</button>
+        <button onclick="showVitalSignsTrend()">Show Vital Signs Trend</button>
+        <button onclick="showLatestVitalSigns()">Show Latest Vital Signs</button>
+        <div id="vitalSignsOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Medical Calculations</h2>
+        <button onclick="showMedicalCalculations()">Show Medical Calculations</button>
+        <div id="calculationsOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Lab Results</h2>
+        <button onclick="showLabResults()">Show Lab Results</button>
+        <button onclick="showLabResultsChart()">Show Lab Results Chart</button>
+        <div id="labResultsOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Medications</h2>
+        <button onclick="showActiveMedications()">Show Active Medications</button>
+        <button onclick="showMedicationHistory()">Show Medication History</button>
+        <button onclick="showMedicationAdherence()">Show Medication Adherence</button>
+        <div id="medicationsOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Conditions</h2>
+        <button onclick="showActiveConditions()">Show Active Conditions</button>
+        <button onclick="showConditionHistory()">Show Condition History</button>
+        <div id="conditionsOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Encounters</h2>
+        <button onclick="showEncounterTimeline()">Show Encounter Timeline</button>
+        <button onclick="showEncounterDetails()">Show Encounter Details</button>
+        <div id="encountersOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Care Plans</h2>
+        <button onclick="showActiveCarePlans()">Show Active Care Plans</button>
+        <button onclick="showCarePlanDetails()">Show Care Plan Details</button>
+        <div id="carePlansOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Resource Relationships</h2>
+        <button onclick="showResourceReferences()">Show Resource References</button>
+        <button onclick="showResourceTimeline()">Show Resource Timeline</button>
+        <div id="resourceOutput" class="output"></div>
+    </div>
+
+    <script>
+        let patient = null;
+
+        function displayOutput(elementId, data) {
+            const output = document.getElementById(elementId);
+            output.textContent = JSON.stringify(data, null, 2);
+        }
+
+        function displayError(elementId, error) {
+            const output = document.getElementById(elementId);
+            output.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+        }
+
+        async function loadPatientData() {
+            try {
+                patient = await FHIRPatientLoader.loadPatient('../sample_patient/Aaron697_Labadie908_aaa9f0de-a3eb-e820-f39c-e961faa40dfa.json');
+                displayOutput('patientLoadOutput', { status: 'Patient data loaded successfully', id: patient.id });
+            } catch (error) {
+                displayError('patientLoadOutput', error);
+            }
+        }
+
+        function showPatientInfo() {
+            if (!patient) return displayError('patientInfoOutput', new Error('Please load patient data first'));
+            const info = {
+                name: patient.name,
+                gender: patient.gender,
+                birthDate: patient.birthDate,
+                age: patient.getAge()
+            };
+            displayOutput('patientInfoOutput', info);
+        }
+
+        function showVitalSigns() {
+            if (!patient) return displayError('vitalSignsOutput', new Error('Please load patient data first'));
+            const vitals = patient.getVitals();
+            displayOutput('vitalSignsOutput', vitals);
+        }
+
+        function showVitalSignsTrend() {
+            if (!patient) return displayError('vitalSignsOutput', new Error('Please load patient data first'));
+            const trend = patient.getVitalSignsTrend('blood-pressure');
+            displayOutput('vitalSignsOutput', trend);
+        }
+
+        function showLatestVitalSigns() {
+            if (!patient) return displayError('vitalSignsOutput', new Error('Please load patient data first'));
+            const latest = patient.getLatestVitalSigns();
+            displayOutput('vitalSignsOutput', latest);
+        }
+
+        function showMedicalCalculations() {
+            if (!patient) return displayError('calculationsOutput', new Error('Please load patient data first'));
+            const calculations = {
+                bmi: patient.calculateBMI(),
+                egfr: patient.calculateEGFR(),
+                bmiPercentile: patient.getBMIPercentile()
+            };
+            displayOutput('calculationsOutput', calculations);
+        }
+
+        function showLabResults() {
+            if (!patient) return displayError('labResultsOutput', new Error('Please load patient data first'));
+            const results = patient.getLabResults();
+            displayOutput('labResultsOutput', results);
+        }
+
+        function showLabResultsChart() {
+            if (!patient) return displayError('labResultsOutput', new Error('Please load patient data first'));
+            const chartData = patient.getLabResultsChart();
+            displayOutput('labResultsOutput', chartData);
+        }
+
+        function showActiveMedications() {
+            if (!patient) return displayError('medicationsOutput', new Error('Please load patient data first'));
+            const medications = patient.getActiveMedications();
+            displayOutput('medicationsOutput', medications);
+        }
+
+        function showMedicationHistory() {
+            if (!patient) return displayError('medicationsOutput', new Error('Please load patient data first'));
+            if (patient.medicationRequests.length === 0) return displayOutput('medicationsOutput', []);
+            const history = patient.getMedicationHistory(patient.medicationRequests[0].id);
+            displayOutput('medicationsOutput', history);
+        }
+
+        function showMedicationAdherence() {
+            if (!patient) return displayError('medicationsOutput', new Error('Please load patient data first'));
+            if (patient.medicationRequests.length === 0) return displayOutput('medicationsOutput', []);
+            const adherence = patient.getMedicationAdherenceChart(patient.medicationRequests[0].id, '1m');
+            displayOutput('medicationsOutput', adherence);
+        }
+
+        function showActiveConditions() {
+            if (!patient) return displayError('conditionsOutput', new Error('Please load patient data first'));
+            const conditions = patient.getActiveConditions();
+            displayOutput('conditionsOutput', conditions);
+        }
+
+        function showConditionHistory() {
+            if (!patient) return displayError('conditionsOutput', new Error('Please load patient data first'));
+            if (patient.conditions.length === 0) return displayOutput('conditionsOutput', []);
+            const history = patient.getConditionHistory(patient.conditions[0].id);
+            displayOutput('conditionsOutput', history);
+        }
+
+        function showEncounterTimeline() {
+            if (!patient) return displayError('encountersOutput', new Error('Please load patient data first'));
+            const timeline = patient.getEncounterTimeline();
+            displayOutput('encountersOutput', timeline);
+        }
+
+        function showEncounterDetails() {
+            if (!patient) return displayError('encountersOutput', new Error('Please load patient data first'));
+            if (patient.encounters.length === 0) return displayOutput('encountersOutput', []);
+            const details = patient.getEncounterDetails(patient.encounters[0].id);
+            displayOutput('encountersOutput', details);
+        }
+
+        function showActiveCarePlans() {
+            if (!patient) return displayError('carePlansOutput', new Error('Please load patient data first'));
+            const plans = patient.getActiveCarePlans();
+            displayOutput('carePlansOutput', plans);
+        }
+
+        function showCarePlanDetails() {
+            if (!patient) return displayError('carePlansOutput', new Error('Please load patient data first'));
+            if (patient.carePlans.length === 0) return displayOutput('carePlansOutput', []);
+            const details = patient.getCarePlanDetails(patient.carePlans[0].id);
+            displayOutput('carePlansOutput', details);
+        }
+
+        function showResourceReferences() {
+            if (!patient) return displayError('resourceOutput', new Error('Please load patient data first'));
+            if (patient.encounters.length === 0) return displayOutput('resourceOutput', []);
+            const references = patient.getResourceReferences(patient.encounters[0].id);
+            displayOutput('resourceOutput', references);
+        }
+
+        function showResourceTimeline() {
+            if (!patient) return displayError('resourceOutput', new Error('Please load patient data first'));
+            if (patient.encounters.length === 0) return displayOutput('resourceOutput', []);
+            const timeline = patient.getResourceTimeline(patient.encounters[0].id);
+            displayOutput('resourceOutput', timeline);
+        }
+    </script>
+</body>
+</html> 

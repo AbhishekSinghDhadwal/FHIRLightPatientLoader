@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FHIR Patient Medication Adherence</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="../FHIRLightPatientLoader.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        .chart-container {
+            width: 800px;
+            height: 400px;
+            margin: 20px 0;
+        }
+        .controls {
+            margin: 20px 0;
+        }
+        select, button {
+            margin-right: 10px;
+            padding: 5px;
+        }
+        .legend {
+            margin-top: 20px;
+        }
+        .legend-item {
+            display: inline-block;
+            margin-right: 20px;
+        }
+        .legend-color {
+            display: inline-block;
+            width: 15px;
+            height: 15px;
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        .tooltip {
+            position: absolute;
+            background: white;
+            padding: 5px;
+            border: 1px solid black;
+            border-radius: 5px;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Medication Adherence Chart</h1>
+    <div class="controls">
+        <select id="medication">
+            <!-- Will be populated dynamically -->
+        </select>
+        <select id="timeRange">
+            <option value="all">All Time</option>
+            <option value="1y">Last Year</option>
+            <option value="6m">Last 6 Months</option>
+            <option value="3m">Last 3 Months</option>
+            <option value="1m">Last Month</option>
+            <option value="1w">Last Week</option>
+        </select>
+        <button id="updateChart">Update Chart</button>
+    </div>
+    <div id="chart" class="chart-container"></div>
+    <div class="legend">
+        <div class="legend-item">
+            <span class="legend-color" style="background-color: #4CAF50;"></span>
+            <span>Administered</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-color" style="background-color: #FFC107;"></span>
+            <span>Missed</span>
+        </div>
+        <div class="legend-item">
+            <span class="legend-color" style="background-color: #F44336;"></span>
+            <span>Not Administered</span>
+        </div>
+    </div>
+
+    <script>
+        let patient;
+        let currentChart;
+
+        async function loadPatientData() {
+            try {
+                patient = await FHIRPatientLoader.loadPatient('../sample_patient/Aaron697_Labadie908_aaa9f0de-a3eb-e820-f39c-e961faa40dfa.json');
+                populateMedicationDropdown();
+                updateChart();
+            } catch (error) {
+                console.error('Error loading patient data:', error);
+                alert('Error loading patient data. Please check the console for details.');
+            }
+        }
+
+        function populateMedicationDropdown() {
+            const medications = patient.getActiveMedications();
+            const dropdown = document.getElementById('medication');
+            
+            dropdown.innerHTML = '';
+            medications.forEach(med => {
+                const option = document.createElement('option');
+                option.value = med.id;
+                option.textContent = med.medicationCodeableConcept?.text || 'Unknown Medication';
+                dropdown.appendChild(option);
+            });
+        }
+
+        function updateChart() {
+            if (!patient) return;
+
+            const medicationId = document.getElementById('medication').value;
+            const timeRange = document.getElementById('timeRange').value;
+            const data = patient.getMedicationAdherenceChart(medicationId, timeRange);
+
+            if (!data || data.length === 0) {
+                console.warn('No data available for the selected medication');
+                return;
+            }
+
+            // Clear previous chart
+            d3.select('#chart').selectAll('*').remove();
+
+            // Set up dimensions
+            const margin = { top: 20, right: 30, bottom: 30, left: 50 };
+            const width = 800 - margin.left - margin.right;
+            const height = 400 - margin.top - margin.bottom;
+
+            // Create SVG
+            const svg = d3.select('#chart')
+                .append('svg')
+                .attr('width', width + margin.left + margin.right)
+                .attr('height', height + margin.top + margin.bottom)
+                .append('g')
+                .attr('transform', `translate(${margin.left},${margin.top})`);
+
+            // Create scales
+            const x = d3.scaleTime()
+                .domain(d3.extent(data, d => d.date))
+                .range([0, width])
+                .nice();
+
+            const y = d3.scaleLinear()
+                .domain([0, 1])
+                .range([height, 0]);
+
+            // Add X axis with formatted dates
+            svg.append('g')
+                .attr('transform', `translate(0,${height})`)
+                .call(d3.axisBottom(x)
+                    .ticks(d3.timeMonth.every(1))
+                    .tickFormat(d3.timeFormat('%b %Y')));
+
+            // Add Y axis
+            svg.append('g')
+                .call(d3.axisLeft(y).ticks(2));
+
+            // Add bars
+            const barWidth = Math.min(width / data.length * 0.8, 20); // Limit bar width
+            
+            svg.selectAll('rect')
+                .data(data)
+                .enter()
+                .append('rect')
+                .attr('x', d => x(d.date) - barWidth/2)
+                .attr('y', d => y(1))
+                .attr('width', barWidth)
+                .attr('height', d => height - y(1))
+                .attr('fill', d => d.taken ? '#4CAF50' : '#F44336')
+                .on('mouseover', function(event, d) {
+                    d3.select(this)
+                        .attr('opacity', 0.8);
+                    
+                    // Show tooltip
+                    const tooltip = d3.select('body')
+                        .append('div')
+                        .attr('class', 'tooltip')
+                        .style('position', 'absolute')
+                        .style('background', 'white')
+                        .style('padding', '5px')
+                        .style('border', '1px solid black')
+                        .style('border-radius', '5px');
+                    
+                    tooltip.html(`
+                        Date: ${d.date.toLocaleDateString()}<br>
+                        Status: ${d.taken ? 'Administered' : 'Not Administered'}
+                    `);
+                })
+                .on('mousemove', function(event) {
+                    d3.select('.tooltip')
+                        .style('left', (event.pageX + 10) + 'px')
+                        .style('top', (event.pageY - 10) + 'px');
+                })
+                .on('mouseout', function() {
+                    d3.select(this)
+                        .attr('opacity', 1);
+                    
+                    d3.select('.tooltip').remove();
+                });
+
+            // Add title
+            svg.append('text')
+                .attr('x', width / 2)
+                .attr('y', 0 - (margin.top / 2))
+                .attr('text-anchor', 'middle')
+                .style('font-size', '16px')
+                .text('Medication Adherence');
+
+            // Add Y axis label
+            svg.append('text')
+                .attr('transform', 'rotate(-90)')
+                .attr('y', 0 - margin.left)
+                .attr('x', 0 - (height / 2))
+                .attr('dy', '1em')
+                .style('text-anchor', 'middle')
+                .text('Adherence');
+        }
+
+        // Event listeners
+        document.getElementById('updateChart').addEventListener('click', updateChart);
+        document.getElementById('medication').addEventListener('change', updateChart);
+        document.getElementById('timeRange').addEventListener('change', updateChart);
+
+        // Load patient data when page loads
+        loadPatientData();
+    </script>
+</body>
+</html> 
