@@ -1,6 +1,6 @@
 /**
  * FHIRLightPatientLoader - A JavaScript library for loading and processing FHIR R5 patient data
- * @version 0.0.1
+ * @version 0.0.2
  */
 
 const FHIRLightPatientLoader = {
