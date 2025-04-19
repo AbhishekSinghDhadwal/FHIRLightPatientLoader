@@ -1,9 +1,9 @@
 /**
- * FHIRPatientLoader - A JavaScript library for loading and processing FHIR R5 patient data
- * @version 1.0.0
+ * FHIRLightPatientLoader - A JavaScript library for loading and processing FHIR R5 patient data
+ * @version 0.0.1
  */
 
-const FHIRPatientLoader = {
+const FHIRLightPatientLoader = {
     /**
      * Loads and parses a single FHIR patient JSON file
      * @param {string} filePath - Path to the patient JSON file

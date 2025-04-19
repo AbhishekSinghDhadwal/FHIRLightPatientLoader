@@ -87,7 +87,7 @@
 
         async function loadPatientData() {
             try {
-                patient = await FHIRPatientLoader.loadPatient('../sample_patient/Aaron697_Labadie908_aaa9f0de-a3eb-e820-f39c-e961faa40dfa.json');
+                patient = await FHIRLightPatientLoader.loadPatient('../sample_patient/Aaron697_Labadie908_aaa9f0de-a3eb-e820-f39c-e961faa40dfa.json');
                 updateChart();
             } catch (error) {
                 console.error('Error loading patient data:', error);
