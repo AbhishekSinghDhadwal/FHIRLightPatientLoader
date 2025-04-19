@@ -177,7 +177,7 @@
             console.log('Filtered vital signs:', filteredVitals);
 
             // Convert to chart data format
-            const data = filteredVitals
+            let data = filteredVitals
                 .map(vital => {
                     if (vitalSign === 'blood-pressure') {
                         // Handle blood pressure panel

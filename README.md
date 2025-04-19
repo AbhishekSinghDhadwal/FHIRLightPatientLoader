@@ -1,5 +1,7 @@
-# FHIRLightPatientLoader v0.0.2
+# FHIRLightPatientLoader v0.0.3
+
 THE FEATURES EXPECTED WILL KEEP CHANGING RAPIDLY FOR THE CURRENT WEEK
+
 A lightweight JavaScript library for loading and processing FHIR R5 patient data bundles, designed to work with D3.js for data visualization.
 
 ## Features
