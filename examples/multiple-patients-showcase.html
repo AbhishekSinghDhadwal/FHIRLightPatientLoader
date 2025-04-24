@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>FHIRLightPatientLoader - Multiple Patients Showcase</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .section {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .output {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .error {
+            color: red;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: #4CAF50;
+            transition: width 0.3s ease;
+        }
+        button {
+            margin: 5px;
+            padding: 8px 16px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+            background-color: #fff;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #f0f0f0;
+        }
+        .summary {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .summary-item {
+            padding: 10px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .collapsible {
+            background-color: #f8f9fa;
+            cursor: pointer;
+            padding: 18px;
+            width: 100%;
+            border: none;
+            text-align: left;
+            outline: none;
+            font-size: 15px;
+            margin: 2px 0;
+            border-radius: 4px;
+        }
+        .active, .collapsible:hover {
+            background-color: #e9ecef;
+        }
+        .content {
+            padding: 0 18px;
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.2s ease-out;
+            background-color: white;
+        }
+        .tabs {
+            display: flex;
+            margin-bottom: 10px;
+        }
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border: 1px solid #ddd;
+            border-bottom: none;
+            border-radius: 4px 4px 0 0;
+            margin-right: 5px;
+        }
+        .tab.active {
+            background-color: #f5f5f5;
+            border-bottom: 2px solid #4CAF50;
+        }
+        .tab-content {
+            display: none;
+            border: 1px solid #ddd;
+            padding: 15px;
+            border-radius: 0 4px 4px 4px;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
+</head>
+<body>
+    <h1>FHIRLightPatientLoader - Multiple Patients Showcase</h1>
+    
+    <div class="section">
+        <h2>Load Multiple Patients</h2>
+        <button onclick="loadPatientsBasic()">Load Patients (Basic)</button>
+        <button onclick="loadPatientsWithProgress()">Load Patients (With Progress)</button>
+        <button onclick="loadPatientsWithOptions()">Load Patients (Custom Options)</button>
+        <div id="progressBar" class="progress-bar" style="display: none;">
+            <div id="progressFill" class="progress-fill"></div>
+        </div>
+        <div id="loadingSummary" class="summary" style="display: none;">
+            <div class="summary-item">
+                <strong>Total Files</strong>
+                <div id="totalFiles">0</div>
+            </div>
+            <div class="summary-item">
+                <strong>Successful</strong>
+                <div id="successfulLoads">0</div>
+            </div>
+            <div class="summary-item">
+                <strong>Failed</strong>
+                <div id="failedLoads">0</div>
+            </div>
+        </div>
+        <div id="loadOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Analyze Multiple Patients</h2>
+        <div class="tabs">
+            <div class="tab active" onclick="showTab('demographics')">Demographics</div>
+            <div class="tab" onclick="showTab('conditions')">Conditions</div>
+            <div class="tab" onclick="showTab('vitals')">Vitals</div>
+        </div>
+        
+        <div id="demographics" class="tab-content active">
+            <button onclick="showAgeDistribution()">Show Age Distribution</button>
+            <button onclick="showGenderDistribution()">Show Gender Distribution</button>
+            <div id="demographicsOutput" class="output"></div>
+        </div>
+        
+        <div id="conditions" class="tab-content">
+            <button onclick="showConditionSummary()">Show Common Conditions</button>
+            <div id="conditionsOutput" class="output"></div>
+        </div>
+        
+        <div id="vitals" class="tab-content">
+            <button onclick="showVitalsSummary()">Show Vitals Summary</button>
+            <div id="vitalsOutput" class="output"></div>
+        </div>
+    </div>
+
+    <script src="../FHIRLightPatientLoader.js"></script>
+    <script>
+        let loadedPatients = null;
+
+        function displayOutput(elementId, data, isError = false) {
+            const element = document.getElementById(elementId);
+            if (typeof data === 'object') {
+                // Create a collapsible view for complex objects
+                element.innerHTML = createCollapsibleView(data);
+            } else {
+                element.textContent = data;
+            }
+            element.className = isError ? 'output error' : 'output';
+        }
+
+        function createCollapsibleView(data, level = 0) {
+            if (typeof data !== 'object' || data === null) {
+                return JSON.stringify(data);
+            }
+
+            let html = '';
+            for (const [key, value] of Object.entries(data)) {
+                if (typeof value === 'object' && value !== null) {
+                    html += `<button class="collapsible">${key}</button>
+                            <div class="content">
+                                ${createCollapsibleView(value, level + 1)}
+                            </div>`;
+                } else {
+                    html += `<div><strong>${key}:</strong> ${JSON.stringify(value)}</div>`;
+                }
+            }
+            return html;
+        }
+
+        function updateProgress(progress) {
+            const progressBar = document.getElementById('progressBar');
+            const progressFill = document.getElementById('progressFill');
+            const summary = document.getElementById('loadingSummary');
+            
+            progressBar.style.display = 'block';
+            summary.style.display = 'grid';
+            
+            const percentage = (progress.processed / progress.total) * 100;
+            progressFill.style.width = `${percentage}%`;
+            
+            document.getElementById('totalFiles').textContent = progress.total;
+            document.getElementById('successfulLoads').textContent = progress.successCount;
+            document.getElementById('failedLoads').textContent = progress.errorCount;
+        }
+
+        async function loadPatientsBasic() {
+            try {
+                const result = await FHIRLightPatientLoader.loadPatients('../sample_patient');
+                loadedPatients = result.patients;
+                displayOutput('loadOutput', result);
+                setupCollapsibles();
+            } catch (error) {
+                displayOutput('loadOutput', `Error: ${error.message}`, true);
+            }
+        }
+
+        async function loadPatientsWithProgress() {
+            try {
+                const result = await FHIRLightPatientLoader.loadPatients('../sample_patient', {
+                    onProgress: updateProgress
+                });
+                loadedPatients = result.patients;
+                displayOutput('loadOutput', result);
+                setupCollapsibles();
+            } catch (error) {
+                displayOutput('loadOutput', `Error: ${error.message}`, true);
+            }
+        }
+
+        async function loadPatientsWithOptions() {
+            try {
+                const result = await FHIRLightPatientLoader.loadPatients('../sample_patient', {
+                    batchSize: 3,
+                    continueOnError: true,
+                    onProgress: updateProgress
+                });
+                loadedPatients = result.patients;
+                displayOutput('loadOutput', result);
+                setupCollapsibles();
+            } catch (error) {
+                displayOutput('loadOutput', `Error: ${error.message}`, true);
+            }
+        }
+
+        function showAgeDistribution() {
+            if (!loadedPatients) {
+                return displayOutput('demographicsOutput', 'Please load patients first', true);
+            }
+
+            const ageGroups = loadedPatients.reduce((acc, patient) => {
+                const age = patient.getAge();
+                const group = Math.floor(age / 10) * 10;
+                acc[`${group}-${group + 9}`] = (acc[`${group}-${group + 9}`] || 0) + 1;
+                return acc;
+            }, {});
+
+            displayOutput('demographicsOutput', {
+                title: 'Age Distribution',
+                distribution: ageGroups
+            });
+            setupCollapsibles();
+        }
+
+        function showGenderDistribution() {
+            if (!loadedPatients) {
+                return displayOutput('demographicsOutput', 'Please load patients first', true);
+            }
+
+            const genderCount = loadedPatients.reduce((acc, patient) => {
+                acc[patient.gender] = (acc[patient.gender] || 0) + 1;
+                return acc;
+            }, {});
+
+            displayOutput('demographicsOutput', {
+                title: 'Gender Distribution',
+                distribution: genderCount
+            });
+            setupCollapsibles();
+        }
+
+        function showConditionSummary() {
+            if (!loadedPatients) {
+                return displayOutput('conditionsOutput', 'Please load patients first', true);
+            }
+
+            const conditions = loadedPatients.reduce((acc, patient) => {
+                const activeConditions = patient.getActiveConditions();
+                activeConditions.forEach(condition => {
+                    const conditionName = condition.code?.text || 'Unknown';
+                    acc[conditionName] = (acc[conditionName] || 0) + 1;
+                });
+                return acc;
+            }, {});
+
+            const sortedConditions = Object.entries(conditions)
+                .sort(([,a], [,b]) => b - a)
+                .reduce((acc, [key, value]) => {
+                    acc[key] = value;
+                    return acc;
+                }, {});
+
+            displayOutput('conditionsOutput', {
+                title: 'Common Conditions',
+                conditions: sortedConditions
+            });
+            setupCollapsibles();
+        }
+
+        function showVitalsSummary() {
+            if (!loadedPatients) {
+                return displayOutput('vitalsOutput', 'Please load patients first', true);
+            }
+
+            const vitalsSummary = loadedPatients.reduce((acc, patient) => {
+                const vitals = patient.getVitals();
+                vitals.forEach(vital => {
+                    const type = vital.code?.text || 'Unknown';
+                    if (!acc[type]) {
+                        acc[type] = {
+                            count: 0,
+                            latest: null
+                        };
+                    }
+                    acc[type].count++;
+                    const date = new Date(vital.effectiveDateTime);
+                    if (!acc[type].latest || date > new Date(acc[type].latest.date)) {
+                        acc[type].latest = {
+                            date: vital.effectiveDateTime,
+                            value: vital.valueQuantity?.value,
+                            unit: vital.valueQuantity?.unit
+                        };
+                    }
+                });
+                return acc;
+            }, {});
+
+            displayOutput('vitalsOutput', {
+                title: 'Vitals Summary',
+                summary: vitalsSummary
+            });
+            setupCollapsibles();
+        }
+
+        function setupCollapsibles() {
+            const coll = document.getElementsByClassName("collapsible");
+            for (let i = 0; i < coll.length; i++) {
+                if (!coll[i].hasListener) {
+                    coll[i].addEventListener("click", function() {
+                        this.classList.toggle("active");
+                        const content = this.nextElementSibling;
+                        if (content.style.maxHeight) {
+                            content.style.maxHeight = null;
+                        } else {
+                            content.style.maxHeight = content.scrollHeight + "px";
+                        }
+                    });
+                    coll[i].hasListener = true;
+                }
+            }
+        }
+
+        function showTab(tabName) {
+            // Hide all tab contents
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Deactivate all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab content and activate tab
+            document.getElementById(tabName).classList.add('active');
+            document.querySelector(`.tab[onclick="showTab('${tabName}')"]`).classList.add('active');
+        }
+    </script>
+</body>
+</html> 

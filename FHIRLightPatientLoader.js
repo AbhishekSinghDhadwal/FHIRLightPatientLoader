@@ -1,6 +1,6 @@
 /**
  * FHIRLightPatientLoader - A JavaScript library for loading and processing FHIR R5 patient data
- * @version 0.0.3
+ * @version 0.0.4
  */
 
 const FHIRLightPatientLoader = {
@@ -25,34 +25,133 @@ const FHIRLightPatientLoader = {
 
     /**
      * Loads and parses all FHIR patient JSON files in a directory
-     * @param {string} directoryPath - Path to the directory containing patient JSON files
+     * @param {string|Array<string>} directoryPath - Path to the directory containing patient JSON files or array of file paths
+     * @param {Object} options - Optional configuration for batch processing
+     * @param {number} options.batchSize - Number of patients to load in parallel (default: 5)
+     * @param {boolean} options.continueOnError - Whether to continue loading if some patients fail (default: true)
+     * @param {function} options.onProgress - Callback function for progress updates
      * @returns {Promise<Array<Patient>>} - A Promise that resolves to an array of Patient objects
      */
-    async loadPatients(directoryPath) {
+    async loadPatients(directoryPath, options = {}) {
+        const {
+            batchSize = 5,
+            continueOnError = true,
+            onProgress = null
+        } = options;
+
         try {
-            const response = await fetch(directoryPath);
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+            // Handle array of file paths directly
+            if (Array.isArray(directoryPath)) {
+                return await this.processFiles(directoryPath, { batchSize, continueOnError, onProgress });
             }
-            const files = await response.json();
-            const patients = [];
-            
-            for (const file of files) {
-                if (file.endsWith('.json')) {
-                    try {
-                        const filePath = `${directoryPath}/${file}`;
-                        const patient = await this.loadPatient(filePath);
-                        patients.push(patient);
-                    } catch (error) {
-                        console.error(`Error loading patient from ${file}:`, error);
+
+            // For directory path, list files in directory
+            let files;
+            if (typeof directoryPath === 'string') {
+                try {
+                    // Try to list files in directory
+                    const response = await fetch(directoryPath);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
                     }
+                    const text = await response.text();
+                    
+                    // Parse directory listing HTML to extract .json files
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(text, 'text/html');
+                    files = Array.from(doc.querySelectorAll('a'))
+                        .map(a => a.getAttribute('href'))
+                        .filter(href => href && href.endsWith('.json'))
+                        .map(href => href.split('/').pop());
+
+                    // If no files found through HTML parsing, try filesystem-style path
+                    if (files.length === 0) {
+                        files = [directoryPath];
+                    }
+                } catch (dirError) {
+                    // If directory listing fails, treat the path as a single file
+                    files = [directoryPath];
                 }
             }
-            
-            return patients;
+
+            // Process the files with the directory path as base
+            return await this.processFiles(files, { batchSize, continueOnError, onProgress }, directoryPath);
         } catch (error) {
             throw new Error(`Error loading patients: ${error.message}`);
         }
+    },
+
+    /**
+     * Internal method to process a list of files
+     * @private
+     */
+    async processFiles(files, { batchSize, continueOnError, onProgress }, basePath = '') {
+        // Filter JSON files
+        const jsonFiles = files.filter(file => 
+            typeof file === 'string' && 
+            (file.endsWith('.json') || file.includes('fhir'))
+        );
+
+        if (jsonFiles.length === 0) {
+            throw new Error('No valid FHIR JSON files found');
+        }
+
+        const patients = [];
+        const errors = [];
+        let processed = 0;
+
+        // Process files in batches
+        for (let i = 0; i < jsonFiles.length; i += batchSize) {
+            const batch = jsonFiles.slice(i, i + batchSize);
+            const batchPromises = batch.map(async file => {
+                try {
+                    // Construct proper file path
+                    let filePath;
+                    if (file.startsWith('http')) {
+                        filePath = file;
+                    } else if (basePath) {
+                        // If we have a base path, join it with the file name
+                        filePath = `${basePath}/${file}`;
+                    } else {
+                        filePath = file;
+                    }
+                    const patient = await this.loadPatient(filePath);
+                    patients.push(patient);
+                } catch (error) {
+                    if (!continueOnError) {
+                        throw error;
+                    }
+                    errors.push({ file, error: error.message });
+                }
+            });
+
+            await Promise.all(batchPromises);
+            processed += batch.length;
+
+            if (onProgress) {
+                onProgress({
+                    processed,
+                    total: jsonFiles.length,
+                    successCount: patients.length,
+                    errorCount: errors.length
+                });
+            }
+        }
+
+        // If no patients were loaded successfully and we have errors
+        if (patients.length === 0 && errors.length > 0) {
+            throw new Error(`Failed to load any patients. First error: ${errors[0].error}`);
+        }
+
+        return {
+            patients,
+            errors: errors.length > 0 ? errors : null,
+            summary: {
+                total: jsonFiles.length,
+                successful: patients.length,
+                failed: errors.length
+            }
+        };
     },
 
     /**

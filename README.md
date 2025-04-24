@@ -1,4 +1,4 @@
-# FHIRLightPatientLoader v0.0.3
+# FHIRLightPatientLoader v0.0.4
 
 THE FEATURES EXPECTED WILL KEEP CHANGING RAPIDLY FOR THE CURRENT WEEK
 
@@ -13,6 +13,7 @@ A lightweight JavaScript library for loading and processing FHIR R5 patient data
 - Handle provenance information
 - Support for both browser and Node.js environments
 - Basic error handling
+- Multi-patient analysis and comparison
 
 ## Installation
 
@@ -32,8 +33,9 @@ Include the library in your HTML file:
 // Load a single patient
 const patient = await FHIRLightPatientLoader.loadPatient('path/to/patient.json');
 
-// Load multiple patients
-const patients = await FHIRLightPatientLoader.loadPatients('path/to/patients/directory');
+// Load multiple patients from a directory
+const result = await FHIRLightPatientLoader.loadPatients('path/to/patients/directory');
+const patients = result.patients; // Array of loaded Patient objects
 ```
 
 ### Working with Patient Data
@@ -104,6 +106,76 @@ const relatedResources = patient.getRelatedResources('observation-123', 'author'
 // Get resource timeline
 const timeline = patient.getResourceTimeline(resourceId);
 ```
+
+### Multi-Patient Analysis
+
+The library supports loading and analyzing multiple patients simultaneously, enabling population-level insights and comparative analysis.
+
+#### Loading Multiple Patients
+
+```javascript
+// Basic loading with progress tracking
+const result = await FHIRLightPatientLoader.loadPatients('../sample_patient', {
+    onProgress: (progress) => {
+        console.log(`Processed ${progress.processed} of ${progress.total} files`);
+    }
+});
+
+// Custom loading options
+const result = await FHIRLightPatientLoader.loadPatients('../sample_patient', {
+    batchSize: 3,           // Process 3 files at a time
+    continueOnError: true,  // Continue even if some files fail
+    onProgress: updateProgress
+});
+```
+
+The `loadPatients` method returns an object containing:
+- `patients`: Array of loaded Patient objects
+- `summary`: Loading statistics (total files, successful loads, failed loads)
+- `errors`: Array of any errors encountered during loading
+
+#### Population Analysis
+
+```javascript
+// Analyze demographics across patients
+const ageGroups = patients.reduce((acc, patient) => {
+    const age = patient.getAge();
+    const group = Math.floor(age / 10) * 10;
+    acc[`${group}-${group + 9}`] = (acc[`${group}-${group + 9}`] || 0) + 1;
+    return acc;
+}, {});
+
+// Compare vital signs across patients
+const vitalSigns = patients.map(patient => ({
+    name: patient.name?.given?.[0],
+    vitals: patient.getVitals()
+}));
+
+// Find common conditions
+const commonConditions = patients.reduce((acc, patient) => {
+    patient.getActiveConditions().forEach(condition => {
+        const conditionName = condition.code?.text || 'Unknown';
+        acc[conditionName] = (acc[conditionName] || 0) + 1;
+    });
+    return acc;
+}, {});
+```
+
+#### Example Files
+
+The library includes example files demonstrating multi-patient features:
+
+1. **multiple-patients-showcase.html**
+   - Demonstrates loading multiple patients
+   - Shows demographic analysis
+   - Displays condition prevalence
+   - Provides vital signs summary
+
+2. **multi-patient-chart.html**
+   - Interactive chart comparing vital signs across patients
+   - Supports multiple vital sign types
+   - Time range filtering
+   - Interactive tooltips and legends
 
 ## API Reference
 
