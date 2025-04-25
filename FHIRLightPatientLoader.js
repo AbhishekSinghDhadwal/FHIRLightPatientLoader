@@ -1,6 +1,6 @@
 /**
  * FHIRLightPatientLoader - A JavaScript library for loading and processing FHIR R5 patient data
- * @version 0.0.4
+ * @version 0.0.5
  */
 
 const FHIRLightPatientLoader = {
@@ -391,9 +391,34 @@ const FHIRLightPatientLoader = {
 
             // Medication methods
             getActiveMedications: function() {
-                return this.medicationRequests.filter(med => 
-                    med.status === 'active' || med.status === 'on-hold'
-                );
+                // Get medications that have active/on-hold requests
+                const activeMedRequestMeds = this.medicationRequests
+                    .filter(med => med.status === 'active' || med.status === 'on-hold')
+                    .map(med => {
+                        const medicationRef = med.medicationReference?.reference;
+                        const medication = medicationRef ? 
+                            this.medications.find(m => medicationRef.endsWith(m.id)) : null;
+                        return {
+                            request: med,
+                            medication: medication
+                        };
+                    });
+
+                // Get active medications that don't have any requests or only have stopped/completed requests
+                const standaloneMeds = this.medications
+                    .filter(med => med.status === 'active')
+                    .filter(med => {
+                        const requests = this.medicationRequests
+                            .filter(req => req.medicationReference?.reference?.endsWith(med.id));
+                        return requests.length === 0 || 
+                               requests.every(req => req.status === 'stopped' || req.status === 'completed');
+                    })
+                    .map(med => ({
+                        medication: med,
+                        request: null
+                    }));
+
+                return [...activeMedRequestMeds, ...standaloneMeds];
             },
 
             getMedicationHistory: function(medicationId) {

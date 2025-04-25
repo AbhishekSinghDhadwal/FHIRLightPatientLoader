@@ -88,6 +88,7 @@
 
     <div class="section">
         <h2>Medications</h2>
+        <button onclick="showAllMedications()">Show All Medications</button>
         <button onclick="showActiveMedications()">Show Active Medications</button>
         <button onclick="showMedicationHistory()">Show Medication History</button>
         <button onclick="showMedicationAdherence()">Show Medication Adherence</button>
@@ -195,23 +196,75 @@
             displayOutput('labResultsOutput', chartData);
         }
 
+        function showAllMedications() {
+            if (!patient) return displayError('medicationsOutput', new Error('Please load patient data first'));
+            
+            // Get all Medication resources
+            const allMeds = patient.medications.map(med => ({
+                id: med.id,
+                name: med.code?.text || 'Unknown Medication',
+                status: med.status,
+                code: med.code?.coding?.[0]?.code,
+                system: med.code?.coding?.[0]?.system,
+                display: med.code?.coding?.[0]?.display
+            }));
+
+            // Get all MedicationRequest resources
+            const allRequests = patient.medicationRequests.map(req => ({
+                id: req.id,
+                status: req.status,
+                intent: req.intent,
+                medicationReference: req.medicationReference?.reference,
+                authoredOn: req.authoredOn,
+                requester: req.requester?.display,
+                dosage: req.dosageInstruction?.[0]?.text
+            }));
+
+            // Get all MedicationAdministration resources
+            const allAdmins = patient.medicationAdministrations.map(admin => ({
+                id: admin.id,
+                status: admin.status,
+                medicationReference: admin.medicationReference?.reference,
+                effectiveDateTime: admin.effectiveDateTime,
+                dosage: admin.dosage?.dose,
+                route: admin.dosage?.route?.text
+            }));
+
+            displayOutput('medicationsOutput', {
+                medications: allMeds,
+                requests: allRequests,
+                administrations: allAdmins
+            });
+        }
+
         function showActiveMedications() {
             if (!patient) return displayError('medicationsOutput', new Error('Please load patient data first'));
             const medications = patient.getActiveMedications();
-            displayOutput('medicationsOutput', medications);
+            console.log('Active medications:', medications);
+            const formattedMeds = medications.map(med => ({
+                name: med.medication?.code?.text || med.request?.medicationCodeableConcept?.text || 'Unknown Medication',
+                status: med.medication?.status || 'unknown',
+                requestStatus: med.request?.status || 'no active request',
+                dosage: med.request?.dosageInstruction?.[0]?.text || 'No dosage information',
+                id: med.medication?.id || med.request?.id
+            }));
+            console.log('Formatted medications:', formattedMeds);
+            displayOutput('medicationsOutput', formattedMeds);
         }
 
         function showMedicationHistory() {
             if (!patient) return displayError('medicationsOutput', new Error('Please load patient data first'));
-            if (patient.medicationRequests.length === 0) return displayOutput('medicationsOutput', []);
-            const history = patient.getMedicationHistory(patient.medicationRequests[0].id);
+            console.log('Patient medications:', patient.medications);
+            if (patient.medications.length === 0) return displayOutput('medicationsOutput', []);
+            const history = patient.getMedicationHistory(patient.medications[0].id);
+            console.log('Medication history:', history);
             displayOutput('medicationsOutput', history);
         }
 
         function showMedicationAdherence() {
             if (!patient) return displayError('medicationsOutput', new Error('Please load patient data first'));
-            if (patient.medicationRequests.length === 0) return displayOutput('medicationsOutput', []);
-            const adherence = patient.getMedicationAdherenceChart(patient.medicationRequests[0].id, '1m');
+            if (patient.medications.length === 0) return displayOutput('medicationsOutput', []);
+            const adherence = patient.getMedicationAdherenceChart(patient.medications[0].id, '1m');
             displayOutput('medicationsOutput', adherence);
         }
 
