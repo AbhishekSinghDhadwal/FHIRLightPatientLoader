@@ -1,6 +1,6 @@
 /**
  * FHIRLightPatientLoader - A JavaScript library for loading and processing FHIR R5 patient data
- * @version 0.0.5
+ * @version 0.0.6
  */
 
 const FHIRLightPatientLoader = {
@@ -456,10 +456,10 @@ const FHIRLightPatientLoader = {
 
                 const labelForObs = (obs) => {
                     const cat = obs.category?.[0]?.coding?.[0]?.code;
-                    if (cat === 'vital-signs') return 'Vital';
-                    if (cat === 'imaging')     return 'Imaging';
-                    if (cat === 'laboratory')  return 'Lab';
-                    return 'Test';
+                    if (cat === 'vital-signs') return 'Vital - ' + obs.code?.coding?.[0]?.display;
+                    if (cat === 'imaging')     return 'Imaging - ' + obs.code?.coding?.[0]?.display;
+                    if (cat === 'laboratory')  return 'Lab - ' + obs.code?.coding?.[0]?.display ;
+                    return 'Test - ' + obs.code?.coding?.[0]?.display;
                 };
 
                 const ageAt = (dateISO) => {
@@ -494,8 +494,6 @@ const FHIRLightPatientLoader = {
                     if (!Object.values(base.metadata).some(v => v !== undefined)) delete base.metadata;
                     events.push(base);
                 };
-
-                /* ---------- Encounters, Procedures, Conditions unchanged ---------- */
                 this.encounters.forEach(enc => {
                     push(
                         enc,
@@ -551,7 +549,6 @@ const FHIRLightPatientLoader = {
                         );
                     });
 
-                /* ---------- DiagnosticReports ---------- */
                 this.diagnosticReports.forEach(dr => {
                     const resultObs = dr.result?.[0]?.reference?.split('/').pop();
                     const obs = resultObs ? this.observations.find(o => o.id === resultObs) : undefined;
@@ -567,7 +564,6 @@ const FHIRLightPatientLoader = {
                     );
                 });
 
-                /* ---------- Observations ---------- */
                 this.observations
                     .filter(obs => obs.category?.some(c =>
                         ['laboratory', 'imaging', 'vital-signs'].includes(c.coding?.[0]?.code)
@@ -583,7 +579,6 @@ const FHIRLightPatientLoader = {
                         );
                     });
 
-                /* ---------- MedicationRequests ---------- */
                 this.medicationRequests.forEach(mr => {
                     const name = mr.medicationCodeableConcept?.text
                         ?? this.medications.find(m => mr.medicationReference?.reference?.endsWith(m.id))
@@ -599,7 +594,6 @@ const FHIRLightPatientLoader = {
                     );
                 });
 
-                /* ---------- Immunizations ---------- */
                 this.immunizations.forEach(imm => {
                     push(
                         imm,
@@ -610,7 +604,6 @@ const FHIRLightPatientLoader = {
                     );
                 });
 
-                /* ---------- CarePlans ---------- */
                 this.carePlans.forEach(cp => {
                     push(
                         cp,
@@ -622,7 +615,6 @@ const FHIRLightPatientLoader = {
                     );
                 });
 
-                /* ---------- Sort & return ---------- */
                 return events.sort((a, b) => new Date(a.start) - new Date(b.start));
             },
 
