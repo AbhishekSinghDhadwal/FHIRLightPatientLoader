@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FHIR Patient Loader Function Showcase</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
-    <script src="https://abhisheksinghdhadwal.github.io/FHIRLightPatientLoader/FHIRLightPatientLoader.js"></script>
+    <script src="/FHIRLightPatientLoader.js"></script>
+    <!--<script src="https://abhisheksinghdhadwal.github.io/FHIRLightPatientLoader/FHIRLightPatientLoader.js"></script>-->
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -114,6 +115,19 @@
         <button onclick="showActiveCarePlans()">Show Active Care Plans</button>
         <button onclick="showCarePlanDetails()">Show Care Plan Details</button>
         <div id="carePlansOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Clinical Notes</h2>
+        <button onclick="showClinicalNotes()">Show Clinical Notes</button>
+        <button onclick="showClinicalNotesRaw()">Show Clinical Notes (Raw)</button>
+        <div id="clinicalNotesOutput" class="output"></div>
+    </div>
+
+    <div class="section">
+        <h2>Patient Event History</h2>
+        <button onclick="showPatientEventHistory()">Show Patient Event History</button>
+        <div id="patientEventHistoryOutput" class="output"></div>
     </div>
 
     <div class="section">
@@ -305,6 +319,24 @@
             if (patient.carePlans.length === 0) return displayOutput('carePlansOutput', []);
             const details = patient.getCarePlanDetails(patient.carePlans[0].id);
             displayOutput('carePlansOutput', details);
+        }
+
+        function showClinicalNotes() {
+            if (!patient) return displayError('clinicalNotesOutput', new Error('Please load patient data first'));
+            const notes = patient.getClinicalNotesHistory();
+            displayOutput('clinicalNotesOutput', notes);
+        }
+
+        function showClinicalNotesRaw() {
+            if (!patient) return displayError('clinicalNotesOutput', new Error('Please load patient data first'));
+            const notes = patient.getClinicalNotesHistory({ decode: false });
+            displayOutput('clinicalNotesOutput', notes);
+        }
+
+        function showPatientEventHistory() {
+            if (!patient) return displayError('patientEventHistoryOutput', new Error('Please load patient data first'));
+            const history = patient.getPatientEventHistory();
+            displayOutput('patientEventHistoryOutput', history);
         }
 
         function showResourceReferences() {

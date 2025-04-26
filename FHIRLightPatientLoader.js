@@ -391,34 +391,239 @@ const FHIRLightPatientLoader = {
 
             // Medication methods
             getActiveMedications: function() {
-                // Get medications that have active/on-hold requests
-                const activeMedRequestMeds = this.medicationRequests
-                    .filter(med => med.status === 'active' || med.status === 'on-hold')
-                    .map(med => {
-                        const medicationRef = med.medicationReference?.reference;
-                        const medication = medicationRef ? 
-                            this.medications.find(m => medicationRef.endsWith(m.id)) : null;
+                return this.medicationRequests.filter(med => 
+                    med.status === 'active' || med.status === 'on-hold'
+                );
+            },
+
+            // Clinical Notes methods
+            isBase64: function(str = '') {
+                const clean = str.trim();
+                return (
+                    clean.length > 0 &&
+                    clean.length % 4 === 0 &&
+                    /^[A-Za-z0-9+/]+={0,2}$/.test(clean)
+                );
+            },
+
+            getClinicalNotesHistory: function(opts = {}) {
+                if (!this.documentReferences) {
+                    console.warn('No document references found for patient');
+                    return [];
+                }
+                
+                const { decode = true } = opts;
+
+                const docs = this.documentReferences.filter(dr =>
+                    dr.category?.some(cat =>
+                        cat.coding?.some(code => code.code === 'clinical-note')
+                    )
+                );
+
+                return docs
+                    .map(dr => {
+                        const attachment = dr.content?.[0]?.attachment || {};
+                        const payload    = attachment.data || '';
+                        const isB64      = this.isBase64(payload);
+                        const text       = decode && isB64 && typeof atob === 'function'
+                            ? atob(payload)
+                            : payload;
+
                         return {
-                            request: med,
-                            medication: medication
+                            id          : dr.id,
+                            date        : new Date(dr.date),
+                            author      : dr.author?.[0]?.display ?? null,
+                            encounterId : dr.context?.encounter?.[0]?.reference?.split('/').pop() ?? null,
+                            noteType    : dr.type?.coding?.[0]?.display ?? null,
+                            rawData     : payload,
+                            text        : text
                         };
+                    })
+                    .sort((a, b) => a.date - b.date);
+            },
+
+            /* -------- helpers (inside patient object) -------- */
+            summarizeObservation: function (obs) {
+                const vq = obs.valueQuantity;
+                if (vq) return `${vq.value} ${vq.unit ?? ''}`.trim();
+                if (obs.valueString) return obs.valueString;
+                if (obs.valueCodeableConcept?.text) return obs.valueCodeableConcept.text;
+                return undefined;
+            },
+
+            getPatientEventHistory: function () {
+                const events = [];
+
+                const labelForObs = (obs) => {
+                    const cat = obs.category?.[0]?.coding?.[0]?.code;
+                    if (cat === 'vital-signs') return 'Vital';
+                    if (cat === 'imaging')     return 'Imaging';
+                    if (cat === 'laboratory')  return 'Lab';
+                    return 'Test';
+                };
+
+                const ageAt = (dateISO) => {
+                    if (!dateISO || !this.birthDate) return undefined;
+                    const event  = new Date(dateISO);
+                    const birth  = new Date(this.birthDate);
+                    let age = event.getFullYear() - birth.getFullYear();
+                    const m = event.getMonth() - birth.getMonth();
+                    if (m < 0 || (m === 0 && event.getDate() < birth.getDate())) age--;
+                    return age;
+                };
+
+                const push = (r, s, e, t, lbl, extra = {}) => {
+                    if (!s) return;
+                    const base = {
+                        start: new Date(s).toISOString(),
+                        end  : e ? new Date(e).toISOString() : null,
+                        type : t,
+                        label: lbl,
+                        resourceType: r.resourceType,
+                        id   : r.id,
+                        metadata: {
+                            encounterId: (r.context?.encounter?.[0]?.reference?.split('/').pop()
+                                ?? r.encounter?.reference?.split('/').pop()
+                                ?? undefined)?.replace(/^urn:uuid:/, ''),
+                            status: r.status,
+                            ageAtEvent: ageAt(s),
+                            ...extra
+                        }
+                    };
+                    // drop empty metadata objects
+                    if (!Object.values(base.metadata).some(v => v !== undefined)) delete base.metadata;
+                    events.push(base);
+                };
+
+                /* ---------- Encounters, Procedures, Conditions unchanged ---------- */
+                this.encounters.forEach(enc => {
+                    push(
+                        enc,
+                        enc.period?.start,
+                        enc.period?.end,
+                        "Encounter",
+                        enc.type?.[0]?.text ?? "Encounter"
+                    );
+                });
+
+                this.procedures.forEach(proc => {
+                    const when = proc.performedPeriod ?? {};
+                    push(
+                        proc,
+                        when.start ?? proc.performedDateTime,
+                        when.end   ?? proc.performedDateTime,
+                        "Procedure",
+                        proc.code?.text ?? "Procedure",
+                        { status: proc.status }
+                    );
+                });
+
+                this.conditions.forEach(cond => {
+                    push(
+                        cond,
+                        cond.onsetDateTime ?? cond.recordedDate,
+                        cond.abatementDateTime ?? null,
+                        "Diagnosis",
+                        cond.code?.text ?? "Diagnosis",
+                        { clinicalStatus: cond.clinicalStatus?.coding?.[0]?.code }
+                    );
+                });
+
+                this.documentReferences
+                    .filter(dr => dr.category?.some(cat =>
+                        cat.coding?.some(c => c.code === 'clinical-note')
+                    ))
+                    .forEach(dr => {
+                        const att = dr.content?.[0]?.attachment ?? {};
+                        const text = att.data && this.isBase64(att.data) && typeof atob === 'function'
+                            ? atob(att.data)
+                            : att.title ?? '';
+                        push(
+                            dr,
+                            dr.date,
+                            null,
+                            'Clinical Note',
+                            dr.type?.coding?.[0]?.display ?? 'Clinical note',
+                            {
+                                author : dr.author?.[0]?.display,
+                                text: text || undefined
+                            }
+                        );
                     });
 
-                // Get active medications that don't have any requests or only have stopped/completed requests
-                const standaloneMeds = this.medications
-                    .filter(med => med.status === 'active')
-                    .filter(med => {
-                        const requests = this.medicationRequests
-                            .filter(req => req.medicationReference?.reference?.endsWith(med.id));
-                        return requests.length === 0 || 
-                               requests.every(req => req.status === 'stopped' || req.status === 'completed');
-                    })
-                    .map(med => ({
-                        medication: med,
-                        request: null
-                    }));
+                /* ---------- DiagnosticReports ---------- */
+                this.diagnosticReports.forEach(dr => {
+                    const resultObs = dr.result?.[0]?.reference?.split('/').pop();
+                    const obs = resultObs ? this.observations.find(o => o.id === resultObs) : undefined;
+                    push(
+                        dr,
+                        dr.effectiveDateTime ?? dr.issued,
+                        null,
+                        'Test',
+                        obs ? labelForObs(obs) : (dr.code?.text ?? 'Diagnostic Report'),
+                        {
+                            result: obs ? this.summarizeObservation(obs) : undefined
+                        }
+                    );
+                });
 
-                return [...activeMedRequestMeds, ...standaloneMeds];
+                /* ---------- Observations ---------- */
+                this.observations
+                    .filter(obs => obs.category?.some(c =>
+                        ['laboratory', 'imaging', 'vital-signs'].includes(c.coding?.[0]?.code)
+                    ))
+                    .forEach(obs => {
+                        push(
+                            obs,
+                            obs.effectiveDateTime,
+                            null,
+                            'Test',
+                            labelForObs(obs),
+                            { result: this.summarizeObservation(obs) }
+                        );
+                    });
+
+                /* ---------- MedicationRequests ---------- */
+                this.medicationRequests.forEach(mr => {
+                    const name = mr.medicationCodeableConcept?.text
+                        ?? this.medications.find(m => mr.medicationReference?.reference?.endsWith(m.id))
+                           ?.code?.text
+                        ?? 'Medication';
+                    push(
+                        mr,
+                        mr.authoredOn,
+                        (mr.status === 'completed') ? mr.authoredOn : null,
+                        'Medication',
+                        name,
+                        { status: mr.status }
+                    );
+                });
+
+                /* ---------- Immunizations ---------- */
+                this.immunizations.forEach(imm => {
+                    push(
+                        imm,
+                        imm.occurrenceDateTime,
+                        null,
+                        'Immunization',
+                        imm.vaccineCode?.text ?? 'Immunization'
+                    );
+                });
+
+                /* ---------- CarePlans ---------- */
+                this.carePlans.forEach(cp => {
+                    push(
+                        cp,
+                        cp.period?.start,
+                        cp.period?.end,
+                        'CarePlan',
+                        cp.title ?? 'Care plan',
+                        { status: cp.status }
+                    );
+                });
+
+                /* ---------- Sort & return ---------- */
+                return events.sort((a, b) => new Date(a.start) - new Date(b.start));
             },
 
             getMedicationHistory: function(medicationId) {
@@ -538,6 +743,9 @@ const FHIRLightPatientLoader = {
                 };
             }
         };
+
+        console.log('Patient object:', patient);
+        console.log('Available methods:', Object.keys(patient));
 
         return patient;
     }

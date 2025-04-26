@@ -1,4 +1,4 @@
-# FHIRLightPatientLoader v0.0.5
+# FHIRLightPatientLoader v0.0.6
 
 THE FEATURES EXPECTED WILL KEEP CHANGING RAPIDLY FOR THE CURRENT WEEK
 
@@ -71,6 +71,10 @@ const encounterDetails = patient.getEncounterDetails(encounterId);
 // Get care plans
 const activeCarePlans = patient.getActiveCarePlans();
 const carePlanDetails = patient.getCarePlanDetails(carePlanId);
+
+// Get clinical notes
+const clinicalNotes = patient.getClinicalNotesHistory();
+const rawClinicalNotes = patient.getClinicalNotesHistory({ decode: false });
 ```
 
 ### Medical Calculations
@@ -228,11 +232,31 @@ The library includes example files demonstrating multi-patient features:
 - `getEncounterDetails(encounterId)`: Returns detailed information about an encounter
 - `getActiveCarePlans()`: Returns currently active care plans
 - `getCarePlanDetails(carePlanId)`: Returns detailed information about a care plan
+- `getClinicalNotesHistory(opts)`: Returns chronological list of clinical notes
+  - `opts.decode`: Boolean (default: true) - Whether to decode Base64-encoded content
 - `calculateBMI()`: Calculates Body Mass Index
 - `calculateEGFR()`: Calculates estimated Glomerular Filtration Rate
 - `getProvenanceForResource(resourceId)`: Returns provenance information for a resource
 - `getResourceTimeline(resourceId)`: Returns timeline of related resources
 - `getRelatedResources(resourceId, relationshipType)`: Returns related resources
+- `getPatientEventHistory()`: Returns a chronological timeline of all patient events, including:
+  - Encounters with start and end dates
+  - Procedures with performed dates
+  - Conditions with onset and abatement dates
+  - Clinical notes with author information
+  - Diagnostic reports with results
+  - Observations (labs, vitals, imaging) with values
+  - Medications with status and timing
+  - Immunizations with occurrence dates
+  - Care plans with period information
+  
+  Each event includes:
+  - start/end timestamps
+  - event type and label
+  - resource type and ID
+  - metadata (encounter ID, status, age at event, etc.)
+  - Additional context-specific information (e.g., lab results, medication status)
+
 
 ## Error Handling
 
