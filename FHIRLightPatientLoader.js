@@ -1,6 +1,6 @@
 /**
  * FHIRLightPatientLoader - A JavaScript library for loading and processing FHIR R5 patient data
- * @version 0.0.6
+ * @version 0.0.7
  */
 
 const FHIRLightPatientLoader = {
@@ -495,12 +495,24 @@ const FHIRLightPatientLoader = {
                     events.push(base);
                 };
                 this.encounters.forEach(enc => {
+                    const type = enc.type?.[0]?.coding?.[0]?.display ?? "Encounter";
+                    const reason = enc.reasonCode?.[0]?.coding?.[0]?.display;
+                    const location = enc.location?.[0]?.location?.display;
+                    const provider = enc.participant?.[0]?.individual?.display;
+                    
+                    let label = type;
+                    if (reason) label += ` - ${reason}`;
+                    
                     push(
                         enc,
                         enc.period?.start,
                         enc.period?.end,
                         "Encounter",
-                        enc.type?.[0]?.text ?? "Encounter"
+                        label,
+                        {
+                            location: location,
+                            provider: provider
+                        }
                     );
                 });
 

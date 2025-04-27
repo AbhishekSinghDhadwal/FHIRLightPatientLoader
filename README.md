@@ -1,4 +1,4 @@
-# FHIRLightPatientLoader v0.0.6
+# FHIRLightPatientLoader v0.0.7
 
 THE FEATURES EXPECTED WILL KEEP CHANGING RAPIDLY FOR THE CURRENT WEEK
 
@@ -257,6 +257,7 @@ The library includes example files demonstrating multi-patient features:
   - metadata (encounter ID, status, age at event, etc.)
   - Additional context-specific information (e.g., lab results, medication status)
 
+Go through the function showcase in [examples/function-showcase.html](examples/function-showcase.html)
 
 ## Error Handling
 
