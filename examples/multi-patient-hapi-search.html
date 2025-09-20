@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Patient HAPI FHIR Search</title>
+    <script src="../FHIRLightPatientLoader.js"></script>
+    <!-- <script src="https://abhisheksinghdhadwal.github.io/FHIRLightPatientLoader/FHIRLightPatientLoader.js"></script> -->
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; max-width: 1200px; margin: 0 auto; padding: 20px; }
+        .section { margin-bottom: 24px; padding: 16px; border: 1px solid #ddd; border-radius: 6px; }
+        .section h2 { margin-top: 0; color: #2c3e50; }
+        .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
+        .row .field { display: flex; flex-direction: column; gap: 6px; }
+        label { font-size: 12px; color: #555; }
+        input, select { padding: 8px; font-size: 14px; min-width: 240px; }
+        button { background-color: #4CAF50; color: white; padding: 10px 16px; border: none; border-radius: 4px; cursor: pointer; }
+        button[disabled] { opacity: 0.6; cursor: not-allowed; }
+        .output { background-color: #f8f9fa; padding: 12px; border-radius: 5px; margin-top: 10px; white-space: pre-wrap; font-family: monospace; }
+        .card { border: 1px solid #eee; border-radius: 6px; padding: 12px; margin-bottom: 10px; }
+        .muted { color: #777; font-size: 12px; }
+        .badge { display: inline-block; padding: 2px 6px; font-size: 12px; background: #eee; border-radius: 10px; margin-right: 6px; }
+        .flex { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    </style>
+    <script>
+        let loadedPatients = [];
+        let selectedPatient = null;
+
+        function setText(id, text) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text;
+        }
+
+        function setHtml(id, html) {
+            const el = document.getElementById(id);
+            if (el) el.innerHTML = html;
+        }
+
+        function displayJson(id, data) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = JSON.stringify(data, null, 2);
+        }
+
+        function patientDisplayName(p) {
+            const name = p.name || {};
+            const given = Array.isArray(name?.given) ? name.given.join(' ') : (name?.given || '');
+            const family = name?.family || '';
+            return [given, family].filter(Boolean).join(' ');
+        }
+
+        async function onSearch() {
+            const url = document.getElementById('fhirUrl').value.trim();
+            const given = document.getElementById('given').value.trim();
+            const family = document.getElementById('family').value.trim();
+            const token = document.getElementById('token').value.trim();
+            const limit = parseInt(document.getElementById('limit').value, 10) || 5;
+
+            const btn = document.getElementById('searchBtn');
+            btn.disabled = true;
+            setText('status', 'Searching and loading patients...');
+            setHtml('patientsList', '');
+            displayJson('detailsOutput', {});
+            selectedPatient = null;
+
+            try {
+                const result = await FHIRLightPatientLoader.loadPatientsFromFhirSearch(url, { given, family, limit }, {
+                    token: token || null,
+                    onProgress: (p) => {
+                        setText('status', `Loading $everything: ${p.processed}/${p.total} (success: ${p.successCount}, errors: ${p.errorCount})`);
+                    }
+                });
+                loadedPatients = result.patients || [];
+                setText('status', `Loaded ${loadedPatients.length} patient(s).`);
+                renderPatientsList();
+            } catch (e) {
+                setText('status', `Error: ${e.message}`);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        function renderPatientsList() {
+            const container = document.getElementById('patientsList');
+            container.innerHTML = '';
+            if (loadedPatients.length === 0) {
+                container.innerHTML = '<div class="muted">No patients loaded.</div>';
+                return;
+            }
+
+            for (let i = 0; i < loadedPatients.length; i++) {
+                const p = loadedPatients[i];
+                const name = patientDisplayName(p) || '(no name)';
+                const age = p.getAge ? p.getAge() : '';
+                const counts = [
+                    { label: 'enc', n: p.encounters?.length || 0 },
+                    { label: 'cond', n: p.conditions?.length || 0 },
+                    { label: 'obs', n: p.observations?.length || 0 },
+                    { label: 'meds', n: p.medications?.length || 0 }
+                ];
+
+                const card = document.createElement('div');
+                card.className = 'card';
+                card.innerHTML = `
+                    <div class="flex">
+                        <strong>#${i + 1} ${name}</strong>
+                        <span class="muted">(ID: ${p.id || 'n/a'})</span>
+                        <span class="muted">Age: ${age || 'n/a'}</span>
+                    </div>
+                    <div style="margin: 8px 0;">
+                        ${counts.map(c => `<span class=badge>${c.label}: ${c.n}</span>`).join(' ')}
+                    </div>
+                    <div class="flex">
+                        <button onclick="selectPatient(${i})">Select</button>
+                        <button onclick="showPatientJson(${i})">Show JSON</button>
+                    </div>
+                `;
+                container.appendChild(card);
+            }
+        }
+
+        function selectPatient(index) {
+            selectedPatient = loadedPatients[index];
+            renderSelectedPatientDetails();
+        }
+
+        function showPatientJson(index) {
+            const p = loadedPatients[index];
+            displayJson('detailsOutput', p);
+        }
+
+        function renderSelectedPatientDetails() {
+            if (!selectedPatient) return displayJson('detailsOutput', {});
+
+            const info = {
+                id: selectedPatient.id,
+                name: selectedPatient.name,
+                gender: selectedPatient.gender,
+                birthDate: selectedPatient.birthDate,
+                age: selectedPatient.getAge?.()
+            };
+
+            const sections = {
+                basicInfo: info,
+                vitals: selectedPatient.getVitals?.() || [],
+                bpTrend: selectedPatient.getVitalSignTrend?.('blood-pressure') || [],
+                labs: selectedPatient.getLabResults?.() || [],
+                medsActive: selectedPatient.getActiveMedications?.() || [],
+                conditionsActive: selectedPatient.getActiveConditions?.() || [],
+                encounterTimeline: selectedPatient.getEncounterTimeline?.() || [],
+                clinicalNotes: selectedPatient.getClinicalNotesHistory?.() || [],
+                eventHistory: selectedPatient.getPatientEventHistory?.() || []
+            };
+
+            displayJson('detailsOutput', sections);
+        }
+    </script>
+</head>
+<body>
+    <h1>Multi-Patient HAPI FHIR Search</h1>
+
+    <div class="section">
+        <h2>Search Patients</h2>
+        <div class="row">
+            <div class="field">
+                <label for="fhirUrl">FHIR Server URL</label>
+                <input id="fhirUrl" type="text" placeholder="https://your-hapi-server/baseR5" />
+            </div>
+            <div class="field">
+                <label for="given">Given (First) Name</label>
+                <input id="given" type="text" placeholder="e.g., John" />
+            </div>
+            <div class="field">
+                <label for="family">Family (Last) Name</label>
+                <input id="family" type="text" placeholder="e.g., Doe" />
+            </div>
+            <div class="field">
+                <label for="token">Bearer Token (optional)</label>
+                <input id="token" type="password" placeholder="eyJhbGci..." />
+            </div>
+            <div class="field">
+                <label for="limit">Max Patients</label>
+                <input id="limit" type="number" min="1" value="5" />
+            </div>
+            <div class="field">
+                <button id="searchBtn" onclick="onSearch()">Search & Load</button>
+            </div>
+        </div>
+        <div id="status" class="muted" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="section">
+        <h2>Results</h2>
+        <div id="patientsList"></div>
+    </div>
+
+    <div class="section">
+        <h2>Selected Patient Details</h2>
+        <div class="output" id="detailsOutput"></div>
+    </div>
+</body>
+</html>
+

@@ -1,6 +1,6 @@
-# FHIRLightPatientLoader v0.0.7
+# FHIRLightPatientLoader v0.0.8
 
-THE FEATURES EXPECTED WILL KEEP CHANGING RAPIDLY FOR THE CURRENT WEEK
+
 
 A lightweight JavaScript library for loading and processing FHIR R5 patient data bundles, designed to work with D3.js for data visualization.
 
@@ -14,6 +14,8 @@ A lightweight JavaScript library for loading and processing FHIR R5 patient data
 - Support for both browser and Node.js environments
 - Basic error handling
 - Multi-patient analysis and comparison
+- HAPI FHIR remote loading via `Patient/{id}/$everything`
+- Multi-patient remote search and batch `$everything` loading
 
 ## Installation
 
@@ -36,6 +38,30 @@ const patient = await FHIRLightPatientLoader.loadPatient('path/to/patient.json')
 // Load multiple patients from a directory
 const result = await FHIRLightPatientLoader.loadPatients('path/to/patients/directory');
 const patients = result.patients; // Array of loaded Patient objects
+```
+
+### Loading from a HAPI FHIR Server
+
+```javascript
+// Load a single patient using $everything
+const patient = await FHIRLightPatientLoader.loadPatientFromFhir(
+  'https://your-hapi-server/baseR5',
+  'patientId123',
+  { token: 'YOUR_BEARER_TOKEN_IF_NEEDED', searchParameters: '_count=1000&_format=json' }
+);
+
+// Search for patients (by given/family) and load multiple via $everything in batches
+const { patients, summary, errors } = await FHIRLightPatientLoader.loadPatientsFromFhirSearch(
+  'https://your-hapi-server/baseR5',
+  { given: 'John', family: 'Doe', limit: 5 },
+  {
+    token: 'YOUR_BEARER_TOKEN_IF_NEEDED',
+    searchParameters: '_count=50&_format=json',
+    everythingParameters: '_count=1000&_format=json',
+    batchSize: 3,
+    onProgress: p => console.log(p)
+  }
+);
 ```
 
 ### Working with Patient Data
@@ -131,6 +157,17 @@ const result = await FHIRLightPatientLoader.loadPatients('../sample_patient', {
     continueOnError: true,  // Continue even if some files fail
     onProgress: updateProgress
 });
+
+// Remote: Search and load multiple via HAPI FHIR
+const remote = await FHIRLightPatientLoader.loadPatientsFromFhirSearch('https://your-hapi-server/baseR5', {
+  given: 'John',
+  family: 'Doe',
+  limit: 5
+}, {
+  token: 'YOUR_BEARER_TOKEN_IF_NEEDED',
+  onProgress: console.log
+});
+const patients = remote.patients;
 ```
 
 The `loadPatients` method returns an object containing:
@@ -181,6 +218,12 @@ The library includes example files demonstrating multi-patient features:
    - Time range filtering
    - Interactive tooltips and legends
 
+3. **multi-patient-hapi-search.html**
+   - Enter FHIR server URL, given/family names, and optional token
+   - Searches Patients and loads `$everything` for each match
+   - Lists results with quick counts and lets you inspect a selected patient
+   - Mirrors many outputs from the function showcase
+
 ## API Reference
 
 ### FHIRLightPatientLoader
@@ -189,6 +232,9 @@ The library includes example files demonstrating multi-patient features:
 
 - `loadPatient(filePath)`: Loads and parses a single FHIR patient JSON file
 - `loadPatients(directoryPath)`: Loads and parses all FHIR patient JSON files in a directory
+- `loadPatientFromFhir(baseUrl, patientId, options)`: Loads one patient via HAPI FHIR `Patient/{id}/$everything`
+- `searchPatientsOnFhir(baseUrl, search, options)`: Searches `Patient` resources (helper)
+- `loadPatientsFromFhirSearch(baseUrl, search, options)`: Searches Patients, then loads each via `$everything` in batches
 
 ### Patient Object
 

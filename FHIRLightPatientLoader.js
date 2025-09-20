@@ -82,6 +82,198 @@ const FHIRLightPatientLoader = {
     },
 
     /**
+     * Loads a patient via a HAPI FHIR server using Patient/{id}/$everything with pagination
+     * @param {string} baseUrl - Base URL of the FHIR server (no trailing slash required)
+     * @param {string} patientId - The Patient ID to load
+     * @param {Object} options - Optional configuration
+     * @param {Object} [options.headers] - Additional headers to include in requests
+     * @param {string} [options.token] - Bearer token for Authorization header
+     * @param {string} [options.searchParameters] - Query string (e.g., '_count=1000&_format=json')
+     * @returns {Promise<Patient>} - A Promise that resolves to a Patient object
+     */
+    async loadPatientFromFhir(baseUrl, patientId, options = {}) {
+        const {
+            headers = {},
+            token = null,
+            searchParameters = '_count=1000&_format=json'
+        } = options;
+
+        const buildHeaders = () => {
+            const h = new Headers(headers);
+            if (token) h.set('Authorization', `Bearer ${token}`);
+            if (!h.has('Accept')) h.set('Accept', 'application/fhir+json, application/json');
+            return h;
+        };
+
+        const base = (baseUrl || '').replace(/\/+$/, '');
+        if (!base) throw new Error('Base URL is required');
+        if (!patientId) throw new Error('Patient ID is required');
+
+        const startUrl = `${base}/Patient/${encodeURIComponent(patientId)}/$everything?${searchParameters}`;
+
+        const mergedBundle = { resourceType: 'Bundle', type: 'searchset', entry: [] };
+
+        let nextUrl = startUrl;
+        let safetyCounter = 0;
+        while (nextUrl) {
+            if (safetyCounter++ > 100) {
+                throw new Error('Pagination safety limit exceeded while loading $everything');
+            }
+
+            const response = await fetch(nextUrl, { headers: buildHeaders() });
+            if (!response.ok) {
+                throw new Error(`HTTP error while loading $everything: ${response.status}`);
+            }
+            const pageBundle = await response.json();
+
+            if (Array.isArray(pageBundle.entry)) {
+                mergedBundle.entry.push(...pageBundle.entry);
+            }
+
+            const links = pageBundle.link || [];
+            const next = Array.isArray(links) ? links.find(l => l.relation === 'next') : null;
+            nextUrl = next?.url || null;
+        }
+
+        return this.createPatient(mergedBundle);
+    },
+
+    /**
+     * Searches Patients on a FHIR server and returns a list of matching Patient resources
+     * (helper used by loadPatientsFromFhirSearch)
+     * @param {string} baseUrl - Base URL of the FHIR server (no trailing slash required)
+     * @param {Object} search - Search parameters { given?: string, family?: string, name?: string }
+     * @param {Object} options - Optional configuration
+     * @param {Object} [options.headers] - Additional headers
+     * @param {string} [options.token] - Bearer token
+     * @param {string} [options.searchParameters] - Additional raw query string (e.g., '_count=50')
+     * @param {number} [options.maxPages] - Safety limit on pages to traverse (default 20)
+     * @returns {Promise<Array<Object>>} - Array of Patient resources
+     */
+    async searchPatientsOnFhir(baseUrl, search = {}, options = {}) {
+        const {
+            headers = {},
+            token = null,
+            searchParameters = '_count=50&_format=json',
+            maxPages = 20
+        } = options;
+
+        const buildHeaders = () => {
+            const h = new Headers(headers);
+            if (token) h.set('Authorization', `Bearer ${token}`);
+            if (!h.has('Accept')) h.set('Accept', 'application/fhir+json, application/json');
+            return h;
+        };
+
+        const base = (baseUrl || '').replace(/\/+$/, '');
+        if (!base) throw new Error('Base URL is required');
+
+        const qsParts = [];
+        if (search.given) qsParts.push(`given=${encodeURIComponent(search.given)}`);
+        if (search.family) qsParts.push(`family=${encodeURIComponent(search.family)}`);
+        if (search.name) qsParts.push(`name:contains=${encodeURIComponent(search.name)}`);
+        const qp = qsParts.join('&');
+        const startUrl = `${base}/Patient?${qp}${qp && searchParameters ? '&' : ''}${searchParameters || ''}`;
+
+        const patients = [];
+        let nextUrl = startUrl;
+        let pageCount = 0;
+        while (nextUrl) {
+            if (pageCount++ > maxPages) break;
+            const response = await fetch(nextUrl, { headers: buildHeaders() });
+            if (!response.ok) {
+                throw new Error(`HTTP error while searching patients: ${response.status}`);
+            }
+            const bundle = await response.json();
+            const entries = Array.isArray(bundle.entry) ? bundle.entry : [];
+            for (const e of entries) {
+                const r = e?.resource;
+                if (r?.resourceType === 'Patient') patients.push(r);
+            }
+            const links = bundle.link || [];
+            const next = Array.isArray(links) ? links.find(l => l.relation === 'next') : null;
+            nextUrl = next?.url || null;
+        }
+
+        return patients;
+    },
+
+    /**
+     * Loads multiple patients from a FHIR server by searching Patients, then calling $everything per match
+     * Returns the same structure as loadPatients: { patients, errors, summary }
+     * @param {string} baseUrl - Base URL of the FHIR server
+     * @param {Object} search - { given?: string, family?: string, name?: string, limit?: number }
+     * @param {Object} options - Optional configuration
+     * @param {Object} [options.headers] - Additional headers
+     * @param {string} [options.token] - Bearer token
+     * @param {string} [options.searchParameters] - Query string for Patient search
+     * @param {string} [options.everythingParameters] - Query string for $everything calls
+     * @param {number} [options.batchSize=3] - Number of $everything calls in parallel
+     * @param {boolean} [options.continueOnError=true] - Whether to continue on errors
+     * @param {function} [options.onProgress] - Progress callback
+     */
+    async loadPatientsFromFhirSearch(baseUrl, search = {}, options = {}) {
+        const {
+            headers = {},
+            token = null,
+            searchParameters = '_count=50&_format=json',
+            everythingParameters = '_count=1000&_format=json',
+            batchSize = 3,
+            continueOnError = true,
+            onProgress = null
+        } = options;
+
+        const found = await this.searchPatientsOnFhir(baseUrl, search, {
+            headers,
+            token,
+            searchParameters
+        });
+
+        const limit = typeof search.limit === 'number' && search.limit > 0 ? search.limit : found.length;
+        const targets = found.slice(0, limit);
+
+        const patients = [];
+        const errors = [];
+        let processed = 0;
+
+        for (let i = 0; i < targets.length; i += batchSize) {
+            const batch = targets.slice(i, i + batchSize);
+            const promises = batch.map(async (p) => {
+                try {
+                    const patient = await this.loadPatientFromFhir(baseUrl, p.id, {
+                        headers,
+                        token,
+                        searchParameters: everythingParameters
+                    });
+                    patients.push(patient);
+                } catch (err) {
+                    if (!continueOnError) throw err;
+                    errors.push({ patientId: p.id, error: err?.message || String(err) });
+                }
+            });
+            await Promise.all(promises);
+            processed += batch.length;
+            if (onProgress) {
+                onProgress({ processed, total: targets.length, successCount: patients.length, errorCount: errors.length });
+            }
+        }
+
+        if (patients.length === 0 && errors.length > 0 && !continueOnError) {
+            throw new Error(`Failed to load any patients. First error: ${errors[0].error}`);
+        }
+
+        return {
+            patients,
+            errors: errors.length > 0 ? errors : null,
+            summary: {
+                total: targets.length,
+                successful: patients.length,
+                failed: errors.length
+            }
+        };
+    },
+
+    /**
      * Internal method to process a list of files
      * @private
      */
