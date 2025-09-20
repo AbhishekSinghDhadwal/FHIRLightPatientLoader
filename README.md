@@ -2,7 +2,7 @@
 
 
 
-A lightweight JavaScript library for loading and processing FHIR R5 patient data bundles, designed to work with D3.js for data visualization.
+A lightweight JavaScript library for loading and processing FHIR patient data bundles, designed to work with D3.js for data visualization.
 
 ## Features
 
