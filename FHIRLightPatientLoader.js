@@ -49,64 +49,73 @@ const FHIRLightPatientLoader = {
             let files;
             if (typeof directoryPath === 'string') {
                 const basePath = directoryPath.replace(/\/+$/, '');
+                const resolveFromManifest = async () => {
+                    const manifestCandidates = [
+                        `${basePath}/manifest.json`,
+                        `${basePath}/patients.json`,
+                        `${basePath}/index.json`
+                    ];
+
+                    for (const manifestPath of manifestCandidates) {
+                        try {
+                            const manifestResponse = await fetch(manifestPath);
+                            if (!manifestResponse.ok) continue;
+                            const manifestJson = await manifestResponse.json();
+                            const candidateFiles = Array.isArray(manifestJson)
+                                ? manifestJson
+                                : manifestJson?.files;
+                            if (Array.isArray(candidateFiles) && candidateFiles.length > 0) {
+                                return candidateFiles;
+                            }
+                        } catch (manifestErr) {
+                            // Try next candidate
+                        }
+                    }
+                    return null;
+                };
                 try {
-                    // Try to list files in directory
-                    const response = await fetch(basePath);
-                    if (!response.ok) {
-                        throw new Error(`HTTP error! status: ${response.status}`);
+                    // If this is a direct JSON file, load as a single source.
+                    if (basePath.endsWith('.json')) {
+                        files = [basePath];
                     }
 
-                    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+                    // Prefer explicit manifest when available (works on static hosts without directory listing).
+                    if (!files) {
+                        files = await resolveFromManifest();
+                    }
 
-                    // If this is already a JSON file/endpoint, load it as a single patient source.
-                    if (contentType.includes('application/json') || basePath.endsWith('.json')) {
-                        files = [basePath];
-                    } else {
-                        const text = await response.text();
-
-                        // Parse directory listing HTML to extract .json files
-                        const parser = new DOMParser();
-                        const doc = parser.parseFromString(text, 'text/html');
-                        files = Array.from(doc.querySelectorAll('a'))
-                            .map(a => a.getAttribute('href'))
-                            .filter(Boolean)
-                            .map(href => href.split('#')[0].split('?')[0])
-                            .filter(href => href && href.endsWith('.json'));
-
-                        // Fallback: load a manifest file when directory listing is unavailable.
-                        if (files.length === 0) {
-                            const manifestCandidates = [
-                                `${basePath}/manifest.json`,
-                                `${basePath}/patients.json`,
-                                `${basePath}/index.json`
-                            ];
-
-                            for (const manifestPath of manifestCandidates) {
-                                try {
-                                    const manifestResponse = await fetch(manifestPath);
-                                    if (!manifestResponse.ok) continue;
-                                    const manifestJson = await manifestResponse.json();
-                                    const candidateFiles = Array.isArray(manifestJson)
-                                        ? manifestJson
-                                        : manifestJson?.files;
-                                    if (Array.isArray(candidateFiles) && candidateFiles.length > 0) {
-                                        files = candidateFiles;
-                                        break;
-                                    }
-                                } catch (manifestErr) {
-                                    // Try next candidate
-                                }
-                            }
+                    // Try to list files in directory
+                    if (!files) {
+                        const response = await fetch(basePath);
+                        if (!response.ok) {
+                            throw new Error(`HTTP error! status: ${response.status}`);
                         }
 
-                        // Final fallback: treat provided path as one file-like endpoint.
-                        if (!files || files.length === 0) {
+                        const contentType = (response.headers.get('content-type') || '').toLowerCase();
+                        if (contentType.includes('application/json')) {
                             files = [basePath];
+                        } else {
+                            const text = await response.text();
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(text, 'text/html');
+                            files = Array.from(doc.querySelectorAll('a'))
+                                .map(a => a.getAttribute('href'))
+                                .filter(Boolean)
+                                .map(href => href.split('#')[0].split('?')[0])
+                                .filter(href => href && href.endsWith('.json'));
                         }
+                    }
+
+                    // Try manifest again after directory parsing to support static hosts.
+                    if (!files || files.length === 0) {
+                        files = await resolveFromManifest();
                     }
                 } catch (dirError) {
-                    // If directory listing fails, treat the path as a single file
-                    files = [basePath];
+                    files = files && files.length > 0 ? files : await resolveFromManifest();
+                }
+
+                if (!files || files.length === 0) {
+                    throw new Error(`Could not discover patient JSON files at ${basePath}. Add a manifest.json or pass explicit file paths.`);
                 }
             }
 
