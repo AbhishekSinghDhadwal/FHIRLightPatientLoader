@@ -86,6 +86,10 @@
             <option value="temperature">Temperature</option>
             <option value="oxygen-saturation">Oxygen Saturation</option>
         </select>
+        <select id="chartMode">
+            <option value="trend">Trend</option>
+            <option value="latest">Latest Snapshot</option>
+        </select>
         <select id="timeRange">
             <option value="1w">Last Week</option>
             <option value="1m">Last Month</option>
@@ -99,6 +103,7 @@
     <div class="chart-container">
         <div id="legend" class="legend"></div>
         <div id="chart"></div>
+        <div id="latestTable"></div>
     </div>
 
     <script src="../FHIRLightPatientLoader.js"></script>
@@ -144,11 +149,24 @@
             }
 
             const vitalType = document.getElementById('vitalType').value;
+            const chartMode = document.getElementById('chartMode').value;
             const { start, end } = getTimeRange();
 
-            // Process vital signs data from all patients using the improved filtering logic
-            const datasets = patients.map((patient, index) => {
-                // Get all vitals and filter by type using both code.text and code.coding[].display
+            const datasets = chartMode === 'latest'
+                ? buildLatestDatasets(vitalType)
+                : buildTrendDatasets(vitalType, start, end);
+
+            if (datasets.length === 0) {
+                const chartDiv = document.getElementById('chart');
+                return chartDiv.innerHTML = `<div class="error">No ${vitalType.replace(/-/g, ' ')} measurements found in the selected time range</div>`;
+            }
+
+            createChart(datasets, vitalType);
+            renderLatestTable(datasets, vitalType, chartMode);
+        }
+
+        function buildTrendDatasets(vitalType, start, end) {
+            return patients.map((patient, index) => {
                 const allVitals = patient.getVitals();
                 const filteredVitals = allVitals.filter(vital => {
                     const codeText = vital.code?.text?.toLowerCase() || '';
@@ -156,15 +174,14 @@
                     const codeCode = vital.code?.coding?.[0]?.code || '';
                     const searchTerm = vitalType.toLowerCase().replace(/-/g, ' ');
 
-                    // Special handling for blood pressure
                     if (vitalType === 'blood-pressure') {
-                        return vital.component?.some(c => 
-                            c.code?.coding?.[0]?.code === '8480-6' || // Systolic
-                            c.code?.coding?.[0]?.code === '8462-4'    // Diastolic
+                        return vital.component?.some(c =>
+                            c.code?.coding?.[0]?.code === '8480-6' ||
+                            c.code?.coding?.[0]?.code === '8462-4'
                         );
                     }
 
-                    return codeText.includes(searchTerm) || 
+                    return codeText.includes(searchTerm) ||
                            codeDisplay.includes(searchTerm) ||
                            (vitalType === 'heart-rate' && codeCode === '8867-4') ||
                            (vitalType === 'respiratory-rate' && codeCode === '9279-1') ||
@@ -172,32 +189,30 @@
                            (vitalType === 'oxygen-saturation' && codeCode === '2708-6');
                 });
 
-                // Convert to chart data format
                 const chartData = filteredVitals.map(vital => {
                     const date = new Date(vital.effectiveDateTime);
                     if (vitalType === 'blood-pressure') {
-                        const systolic = vital.component?.find(c => 
-                            c.code?.coding?.[0]?.code === '8480-6' || 
+                        const systolic = vital.component?.find(c =>
+                            c.code?.coding?.[0]?.code === '8480-6' ||
                             c.code?.text?.toLowerCase().includes('systolic')
                         );
-                        const diastolic = vital.component?.find(c => 
-                            c.code?.coding?.[0]?.code === '8462-4' || 
+                        const diastolic = vital.component?.find(c =>
+                            c.code?.coding?.[0]?.code === '8462-4' ||
                             c.code?.text?.toLowerCase().includes('diastolic')
                         );
-                        
+
                         return {
                             date,
                             systolic: systolic?.valueQuantity?.value,
                             diastolic: diastolic?.valueQuantity?.value,
                             unit: systolic?.valueQuantity?.unit || diastolic?.valueQuantity?.unit
                         };
-                    } else {
-                        return {
-                            date,
-                            value: vital.valueQuantity?.value,
-                            unit: vital.valueQuantity?.unit
-                        };
                     }
+                    return {
+                        date,
+                        value: vital.valueQuantity?.value,
+                        unit: vital.valueQuantity?.unit
+                    };
                 }).filter(d => d.date >= start && d.date <= end);
 
                 return {
@@ -206,13 +221,72 @@
                     data: chartData
                 };
             }).filter(dataset => dataset.data.length > 0);
+        }
 
-            if (datasets.length === 0) {
-                const chartDiv = document.getElementById('chart');
-                return chartDiv.innerHTML = `<div class="error">No ${vitalType.replace(/-/g, ' ')} measurements found in the selected time range</div>`;
+        function latestEntryFromSnapshot(snapshot, vitalType) {
+            if (!snapshot) return null;
+            if (vitalType === 'blood-pressure') return snapshot.bloodPressure || null;
+            if (vitalType === 'heart-rate') return snapshot.heartRate || null;
+            if (vitalType === 'respiratory-rate') return snapshot.respiratoryRate || null;
+            if (vitalType === 'temperature') return snapshot.bodyTemperature || null;
+            if (vitalType === 'oxygen-saturation') return snapshot.oxygenSaturation || null;
+            return null;
+        }
+
+        function buildLatestDatasets(vitalType) {
+            return patients.map((patient, index) => {
+                const snapshot = patient.getLatestVitalSigns ? patient.getLatestVitalSigns() : null;
+                const latest = latestEntryFromSnapshot(snapshot, vitalType);
+                if (!latest) return null;
+
+                const data = vitalType === 'blood-pressure'
+                    ? [{
+                        date: new Date(latest.date),
+                        systolic: latest.systolic,
+                        diastolic: latest.diastolic,
+                        unit: latest.unit
+                    }]
+                    : [{
+                        date: new Date(latest.date),
+                        value: latest.value,
+                        unit: latest.unit
+                    }];
+
+                return {
+                    id: patient.id,
+                    name: patient.name?.given?.[0] || `Patient ${index + 1}`,
+                    data
+                };
+            }).filter(Boolean);
+        }
+
+        function renderLatestTable(datasets, vitalType, chartMode) {
+            const container = document.getElementById('latestTable');
+            if (chartMode !== 'latest') {
+                container.innerHTML = '';
+                return;
             }
+            const rows = datasets.map(d => {
+                const point = d.data[0];
+                const value = vitalType === 'blood-pressure'
+                    ? `${point.systolic ?? '-'} / ${point.diastolic ?? '-'} ${point.unit || 'mmHg'}`
+                    : `${point.value ?? '-'} ${point.unit || getDefaultUnit(vitalType)}`;
+                return `<tr><td>${d.name}</td><td>${value}</td><td>${point.date.toLocaleString()}</td></tr>`;
+            }).join('');
 
-            createChart(datasets, vitalType);
+            container.innerHTML = `
+                <h3>Latest Snapshot Comparison</h3>
+                <table style="width:100%; border-collapse: collapse;">
+                    <thead>
+                        <tr>
+                            <th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Patient</th>
+                            <th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Value</th>
+                            <th style="text-align:left; border-bottom:1px solid #ddd; padding:6px;">Observed At</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            `;
         }
 
         function createChart(datasets, vitalType) {
@@ -233,9 +307,13 @@
                 .append('g')
                 .attr('transform', `translate(${margin.left},${margin.top})`);
 
-            // Create tooltip
-            const tooltip = d3.select('body').append('div')
-                .attr('class', 'tooltip');
+            // Reuse one tooltip to avoid duplicates during updates
+            let tooltip = d3.select('body').select('.tooltip');
+            if (tooltip.empty()) {
+                tooltip = d3.select('body')
+                    .append('div')
+                    .attr('class', 'tooltip');
+            }
 
             // Set up scales
             const xScale = d3.scaleTime()

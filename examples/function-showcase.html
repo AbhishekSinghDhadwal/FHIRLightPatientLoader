@@ -105,6 +105,7 @@
     <div class="section">
         <h2>Basic Patient Information</h2>
         <button onclick="showPatientInfo()">Show Patient Info</button>
+        <button onclick="showQuickSnapshot()">Show Quick Snapshot</button>
         <div id="patientInfoOutput" class="output"></div>
     </div>
 
@@ -329,6 +330,23 @@
             displayOutput('patientInfoOutput', info);
         }
 
+        function showQuickSnapshot() {
+            if (!patient) return displayError('patientInfoOutput', new Error('Please load patient data first'));
+            const snapshot = {
+                id: patient.id,
+                demographics: {
+                    name: patient.name,
+                    age: patient.getAge(),
+                    gender: patient.gender
+                },
+                latestVitals: patient.getLatestVitalSigns(),
+                activeConditionsCount: patient.getActiveConditions().length,
+                activeMedicationRequestsCount: patient.getActiveMedications().length,
+                recentEncounterCount: patient.getEncounterTimeline().slice(-5).length
+            };
+            displayOutput('patientInfoOutput', snapshot);
+        }
+
         function showVitalSigns() {
             if (!patient) return displayError('vitalSignsOutput', new Error('Please load patient data first'));
             const vitals = patient.getVitals();
@@ -352,6 +370,7 @@
             const calculations = {
                 bmi: patient.calculateBMI(),
                 egfr: patient.calculateEGFR(),
+                bmiCategory: patient.getBMICategory(),
                 bmiPercentile: patient.getBMIPercentile()
             };
             displayOutput('calculationsOutput', calculations);
@@ -412,25 +431,22 @@
 
         function showActiveMedications() {
             if (!patient) return displayError('medicationsOutput', new Error('Please load patient data first'));
-            const medications = patient.getActiveMedications();
-            console.log('Active medications:', medications);
-            const formattedMeds = medications.map(med => ({
-                name: med.medication?.code?.text || med.request?.medicationCodeableConcept?.text || 'Unknown Medication',
-                status: med.medication?.status || 'unknown',
-                requestStatus: med.request?.status || 'no active request',
-                dosage: med.request?.dosageInstruction?.[0]?.text || 'No dosage information',
-                id: med.medication?.id || med.request?.id
+            const activeRequests = patient.getActiveMedications();
+            const formatted = activeRequests.map(req => ({
+                id: req.id,
+                status: req.status,
+                intent: req.intent,
+                medication: req.medicationCodeableConcept?.text || req.medicationReference?.reference || 'Unknown Medication',
+                authoredOn: req.authoredOn || null,
+                dosage: req.dosageInstruction?.[0]?.text || null
             }));
-            console.log('Formatted medications:', formattedMeds);
-            displayOutput('medicationsOutput', formattedMeds);
+            displayOutput('medicationsOutput', formatted);
         }
 
         function showMedicationHistory() {
             if (!patient) return displayError('medicationsOutput', new Error('Please load patient data first'));
-            console.log('Patient medications:', patient.medications);
             if (patient.medications.length === 0) return displayOutput('medicationsOutput', []);
             const history = patient.getMedicationHistory(patient.medications[0].id);
-            console.log('Medication history:', history);
             displayOutput('medicationsOutput', history);
         }
 

@@ -11,7 +11,7 @@ A lightweight JavaScript library for loading and processing FHIR patient data bu
 - Medical calculations (BMI, eGFR, age)
 - Prepare data for visualization with D3.js
 - Handle provenance information
-- Support for both browser and Node.js environments
+- Browser-focused usage for apps and demos
 - Basic error handling
 - Multi-patient analysis and comparison
 - HAPI FHIR remote loading via `Patient/{id}/$everything`
@@ -76,6 +76,7 @@ const age = patient.getAge();
 // Get vital signs
 const vitals = patient.getVitals();
 const bloodPressureTrend = patient.getVitalSignTrend('blood-pressure');
+const latestVitals = patient.getLatestVitalSigns();
 
 // Get lab results
 const labResults = patient.getLabResults();
@@ -108,6 +109,7 @@ const rawClinicalNotes = patient.getClinicalNotesHistory({ decode: false });
 ```javascript
 // Calculate medical metrics
 const bmi = patient.calculateBMI();
+const bmiCategory = patient.getBMICategory();
 const egfr = patient.calculateEGFR();
 ```
 
@@ -267,6 +269,8 @@ The library includes example files demonstrating multi-patient features:
 - `getAge()`: Calculates patient's age
 - `getVitals()`: Returns all vital sign observations
 - `getVitalSignTrend(vitalType)`: Returns trend data for a specific vital sign
+- `getVitalSignsTrend(vitalType)`: Alias for `getVitalSignTrend` for compatibility with existing demos
+- `getLatestVitalSigns()`: Returns latest BP, heart rate, respiratory rate, temperature, SpO2, weight, and height
 - `getLabResults()`: Returns all laboratory observations
 - `getLabResultsChart()`: Prepares lab results data for visualization
 - `getActiveMedications()`: Returns currently active medications
@@ -281,6 +285,8 @@ The library includes example files demonstrating multi-patient features:
 - `getClinicalNotesHistory(opts)`: Returns chronological list of clinical notes
   - `opts.decode`: Boolean (default: true) - Whether to decode Base64-encoded content
 - `calculateBMI()`: Calculates Body Mass Index
+- `getBMICategory()`: Returns standard BMI category (underweight, normal, overweight, obesity)
+- `getBMIPercentile()`: Returns a pediatric-oriented BMI percentile estimate (< 20 years)
 - `calculateEGFR()`: Calculates estimated Glomerular Filtration Rate
 - `getProvenanceForResource(resourceId)`: Returns provenance information for a resource
 - `getResourceTimeline(resourceId)`: Returns timeline of related resources

@@ -1,6 +1,6 @@
 /**
  * FHIRLightPatientLoader - A JavaScript library for loading and processing FHIR R5 patient data
- * @version 0.0.7
+ * @version 0.0.8
  */
 
 const FHIRLightPatientLoader = {
@@ -425,6 +425,72 @@ const FHIRLightPatientLoader = {
                     .sort((a, b) => a.date - b.date);
             },
 
+            getVitalSignsTrend: function(vitalType) {
+                return this.getVitalSignTrend(vitalType);
+            },
+
+            getLatestVitalSigns: function() {
+                const loincMap = [
+                    { key: 'heartRate', code: '8867-4', label: 'Heart rate' },
+                    { key: 'respiratoryRate', code: '9279-1', label: 'Respiratory rate' },
+                    { key: 'bodyTemperature', code: '8310-5', label: 'Body temperature' },
+                    { key: 'oxygenSaturation', code: '2708-6', label: 'Oxygen saturation' },
+                    { key: 'bodyWeight', code: '29463-7', label: 'Body weight' },
+                    { key: 'bodyHeight', code: '8302-2', label: 'Body height' }
+                ];
+
+                const latestByLoinc = (loincCode) => {
+                    const matches = this.getVitals().filter(obs =>
+                        obs.code?.coding?.some(c =>
+                            c.system === 'http://loinc.org' && c.code === loincCode
+                        )
+                    );
+                    if (matches.length === 0) return null;
+                    return matches.reduce((latest, current) =>
+                        new Date(current.effectiveDateTime) > new Date(latest.effectiveDateTime) ? current : latest
+                    );
+                };
+
+                const readQuantity = (obs) => ({
+                    date: new Date(obs.effectiveDateTime),
+                    value: obs.valueQuantity?.value ?? null,
+                    unit: obs.valueQuantity?.unit ?? null
+                });
+
+                const bpMatches = this.getVitals().filter(obs =>
+                    obs.code?.coding?.some(c => c.system === 'http://loinc.org' && c.code === '85354-9')
+                );
+                let bloodPressure = null;
+                if (bpMatches.length > 0) {
+                    const latestBp = bpMatches.reduce((latest, current) =>
+                        new Date(current.effectiveDateTime) > new Date(latest.effectiveDateTime) ? current : latest
+                    );
+                    const systolic = latestBp.component?.find(c =>
+                        c.code?.coding?.some(code => code.code === '8480-6')
+                    )?.valueQuantity;
+                    const diastolic = latestBp.component?.find(c =>
+                        c.code?.coding?.some(code => code.code === '8462-4')
+                    )?.valueQuantity;
+                    bloodPressure = {
+                        date: new Date(latestBp.effectiveDateTime),
+                        systolic: systolic?.value ?? null,
+                        diastolic: diastolic?.value ?? null,
+                        unit: systolic?.unit ?? diastolic?.unit ?? null
+                    };
+                }
+
+                const latest = {
+                    bloodPressure
+                };
+
+                loincMap.forEach(item => {
+                    const obs = latestByLoinc(item.code);
+                    latest[item.key] = obs ? { label: item.label, ...readQuantity(obs) } : null;
+                });
+
+                return latest;
+            },
+
             // Medical calculation methods
             calculateBMI: function() {
                 const weight = this.observations.find(obs => 
@@ -443,6 +509,27 @@ const FHIRLightPatientLoader = {
 
                 if (!weight || !height) return null;
                 return weight / Math.pow(height / 100, 2);
+            },
+
+            getBMICategory: function() {
+                const bmi = this.calculateBMI();
+                if (bmi == null) return null;
+                if (bmi < 18.5) return 'Underweight';
+                if (bmi < 25) return 'Normal weight';
+                if (bmi < 30) return 'Overweight';
+                return 'Obesity';
+            },
+
+            getBMIPercentile: function() {
+                const age = this.getAge();
+                if (typeof age !== 'number' || age >= 20) return null;
+                const bmi = this.calculateBMI();
+                if (bmi == null) return null;
+                if (bmi < 14) return 5;
+                if (bmi < 16) return 25;
+                if (bmi < 19) return 50;
+                if (bmi < 22) return 75;
+                return 95;
             },
 
             calculateEGFR: function() {
@@ -939,9 +1026,6 @@ const FHIRLightPatientLoader = {
                 };
             }
         };
-
-        console.log('Patient object:', patient);
-        console.log('Available methods:', Object.keys(patient));
 
         return patient;
     }
