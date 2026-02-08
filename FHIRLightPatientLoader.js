@@ -48,29 +48,65 @@ const FHIRLightPatientLoader = {
             // For directory path, list files in directory
             let files;
             if (typeof directoryPath === 'string') {
+                const basePath = directoryPath.replace(/\/+$/, '');
                 try {
                     // Try to list files in directory
-                    const response = await fetch(directoryPath);
+                    const response = await fetch(basePath);
                     if (!response.ok) {
                         throw new Error(`HTTP error! status: ${response.status}`);
                     }
-                    const text = await response.text();
-                    
-                    // Parse directory listing HTML to extract .json files
-                    const parser = new DOMParser();
-                    const doc = parser.parseFromString(text, 'text/html');
-                    files = Array.from(doc.querySelectorAll('a'))
-                        .map(a => a.getAttribute('href'))
-                        .filter(href => href && href.endsWith('.json'))
-                        .map(href => href.split('/').pop());
 
-                    // If no files found through HTML parsing, try filesystem-style path
-                    if (files.length === 0) {
-                        files = [directoryPath];
+                    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+
+                    // If this is already a JSON file/endpoint, load it as a single patient source.
+                    if (contentType.includes('application/json') || basePath.endsWith('.json')) {
+                        files = [basePath];
+                    } else {
+                        const text = await response.text();
+
+                        // Parse directory listing HTML to extract .json files
+                        const parser = new DOMParser();
+                        const doc = parser.parseFromString(text, 'text/html');
+                        files = Array.from(doc.querySelectorAll('a'))
+                            .map(a => a.getAttribute('href'))
+                            .filter(Boolean)
+                            .map(href => href.split('#')[0].split('?')[0])
+                            .filter(href => href && href.endsWith('.json'));
+
+                        // Fallback: load a manifest file when directory listing is unavailable.
+                        if (files.length === 0) {
+                            const manifestCandidates = [
+                                `${basePath}/manifest.json`,
+                                `${basePath}/patients.json`,
+                                `${basePath}/index.json`
+                            ];
+
+                            for (const manifestPath of manifestCandidates) {
+                                try {
+                                    const manifestResponse = await fetch(manifestPath);
+                                    if (!manifestResponse.ok) continue;
+                                    const manifestJson = await manifestResponse.json();
+                                    const candidateFiles = Array.isArray(manifestJson)
+                                        ? manifestJson
+                                        : manifestJson?.files;
+                                    if (Array.isArray(candidateFiles) && candidateFiles.length > 0) {
+                                        files = candidateFiles;
+                                        break;
+                                    }
+                                } catch (manifestErr) {
+                                    // Try next candidate
+                                }
+                            }
+                        }
+
+                        // Final fallback: treat provided path as one file-like endpoint.
+                        if (!files || files.length === 0) {
+                            files = [basePath];
+                        }
                     }
                 } catch (dirError) {
                     // If directory listing fails, treat the path as a single file
-                    files = [directoryPath];
+                    files = [basePath];
                 }
             }
 
@@ -278,10 +314,11 @@ const FHIRLightPatientLoader = {
      * @private
      */
     async processFiles(files, { batchSize, continueOnError, onProgress }, basePath = '') {
-        // Filter JSON files
-        const jsonFiles = files.filter(file => 
-            typeof file === 'string' && 
-            (file.endsWith('.json') || file.includes('fhir'))
+        const normalizedBasePath = (basePath || '').replace(/\/+$/, '');
+
+        // Keep any non-empty string and let loadPatient/fetch determine validity.
+        const jsonFiles = files.filter(file =>
+            typeof file === 'string' && file.trim().length > 0
         );
 
         if (jsonFiles.length === 0) {
@@ -301,9 +338,11 @@ const FHIRLightPatientLoader = {
                     let filePath;
                     if (file.startsWith('http')) {
                         filePath = file;
-                    } else if (basePath) {
+                    } else if (file.startsWith('/')) {
+                        filePath = file;
+                    } else if (normalizedBasePath && !file.startsWith('./') && !file.startsWith('../')) {
                         // If we have a base path, join it with the file name
-                        filePath = `${basePath}/${file}`;
+                        filePath = `${normalizedBasePath}/${file}`;
                     } else {
                         filePath = file;
                     }
